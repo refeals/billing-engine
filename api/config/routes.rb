@@ -6,12 +6,24 @@ Rails.application.routes.draw do
     namespace :v1 do
       resources :billing_events, only: :index
 
+      resources :plans, only: %i[index show create] do
+        post :archive, on: :member
+      end
+
+      resources :customers, only: %i[index show create] do
+        resources :payment_methods, only: :create do
+          post :make_default, on: :member
+        end
+        resources :credit_ledger_entries, only: %i[index create]
+      end
+
       if Rails.configuration.x.simulator_enabled
         namespace :simulator do
           resource :clock, only: :show do
             post :advance
             post :reset
           end
+          resources :test_cards, only: :index
         end
       end
     end
