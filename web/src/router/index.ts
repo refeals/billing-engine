@@ -58,6 +58,12 @@ const router = createRouter({
       meta: { title: 'Webhook event' },
     },
     {
+      path: '/simulator',
+      name: 'scenario-lab',
+      component: () => import('@/features/simulator/ScenarioLabView.vue'),
+      meta: { title: 'Scenario Lab' },
+    },
+    {
       path: '/audit',
       name: 'audit-log',
       component: () => import('@/features/audit/AuditLogView.vue'),
