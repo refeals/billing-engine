@@ -44,6 +44,11 @@ through the gateway, and settled by webhooks that drive the subscription state.
 - If total after credit is zero, the invoice is marked `paid` directly without a charge.
 
 ### Flows
+
+This plan replaces the provisional behavior from plan 04: `Ticks::EndTrials` stops converting
+trials without charging, `Ticks::RenewPeriods` is replaced by `Ticks::Renew` (which invoices),
+and subscriptions created without a trial get their first invoice.
+
 - **Create without trial:** `(none) → active` with the first invoice charged immediately.
   If that first payment fails, `active → past_due`. Decision: no `incomplete` state; it's not
   in the agreed state list and `past_due` + dunning covers it.

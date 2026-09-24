@@ -61,6 +61,35 @@ cd api && bundle exec rspec
 cd web && pnpm test:unit
 ```
 
+## Subscription lifecycle
+
+```mermaid
+stateDiagram-v2
+    [*] --> trialing: subscription_created (plan has a trial)
+    [*] --> active: subscription_created (no trial)
+    trialing --> active: trial_converted
+    trialing --> past_due: payment_failed
+    trialing --> canceled: customer_requested / period_ended_after_cancel_request
+    active --> past_due: payment_failed
+    active --> paused: customer_requested
+    active --> canceled: customer_requested / period_ended_after_cancel_request
+    past_due --> active: payment_recovered
+    past_due --> canceled: dunning_exhausted / customer_requested / period_ended_after_cancel_request
+    paused --> active: customer_requested / pause_ended
+    paused --> canceled: customer_requested
+    canceled --> [*]
+```
+
+The diagram mirrors `SubscriptionStateMachine::TRANSITIONS`, the single
+source of truth; a spec walks every (from, to) pair of that table, so an edge can't be added
+or removed without the tests noticing. Status changes go through one service,
+`Subscriptions::Transition`, which checks the edge and the reason, then updates the status,
+writes a `subscription_state_transitions` row and an audit event in the same transaction.
+Updating `status` any other way raises.
+
+A cancellation "at period end" is a flag, not a state: the subscription keeps its status
+until the period ends, and the flag can be removed until then.
+
 ## Architecture decisions
 
 - **Simulated clock.** Billing flows span weeks (trials, renewals, a 14-day dunning
@@ -90,6 +119,21 @@ cd web && pnpm test:unit
 - **Test cards by token, like Stripe test mode.** A payment method stores a token such as
   `pm_card_chargeDeclinedInsufficientFunds`, and that token decides how the fake provider
   answers a charge. Demo scenarios pick a card that will fail without any real card data.
+- **Optimistic locking on every operator action.** Each action carries the `lock_version` the
+  screen was loaded with. If the subscription changed in between (another operator, or a tick
+  that renewed or canceled it), the API answers 409 and applies nothing; the UI offers to
+  reload instead of acting on a state nobody saw.
+- **Idempotency keys for state-changing requests.** The frontend sends one
+  `Idempotency-Key` per user intent (per dialog). The API stores the first response and
+  replays it for retries of the same request (errors included), refuses the key for a
+  different request, and doesn't keep 5xx responses so a real retry can run.
+- **Allowed actions come from the API.** `allowed_actions` is computed by the model from the
+  state and flags; the API refuses anything else and the UI only renders those buttons, so
+  both can't disagree.
+- **Provisional until invoicing (plan 07).** Trials currently convert to active when they end
+  and active periods roll forward when they end, both without charging, and plans without a
+  trial start active. Plan 07 replaces this with an
+  invoice and a payment webhook.
 - **Money as integer cents.** Every amount is stored as `*_cents` integers with a `currency`
   column (always `USD`). Floats never touch money.
 - **One error shape, one list shape.** Every API error is
@@ -120,6 +164,17 @@ cd web && pnpm test:unit
 - At most one default card per customer, enforced by a partial unique index; switching the
   default unsets the old one first in the same transaction.
 - Emails are unique regardless of case or surrounding spaces.
+- An invalid status change is refused with the allowed alternatives, and nothing is written.
+- Two operators acting on the same subscription: the second one gets a 409 instead of
+  overwriting the first.
+- Double click or retry on "Cancel": the idempotency key makes it apply once and replays the
+  same response. After a 4xx the frontend starts a new key, so fixing the input and submitting
+  again is a new attempt, not a "reused key" error; after a network error it keeps the key.
+- Cancel at period end, including during a trial: the trial ends canceled instead of
+  converting, because cancellations run before trial conversion in each tick.
+- Pause with an automatic resume date; an open-ended pause stays paused until resumed.
+- One live subscription per customer, enforced by a partial unique index as well as by the
+  service.
 - Money typed by the operator is parsed digit by digit, never through floating point, and an
   ambiguous comma (`12,5`) is rejected instead of guessed.
 
@@ -133,7 +188,7 @@ agreed decision live in [`docs/00-prompt.md`](docs/00-prompt.md).
 | 01 | [Foundation](docs/01-foundation.md) | Done |
 | 02 | [Audit log](docs/02-audit-log.md) | Done |
 | 03 | [Catalog and customers](docs/03-catalog-and-customers.md) | Done |
-| 04 | [Subscription state machine](docs/04-subscription-state-machine.md) | Planned |
+| 04 | [Subscription state machine](docs/04-subscription-state-machine.md) | Done |
 | 05 | [Webhook ingestion and idempotency](docs/05-webhook-ingestion.md) | Planned |
 | 06 | [Fake payment provider](docs/06-fake-payment-provider.md) | Planned |
 | 07 | [Invoicing and payments](docs/07-invoicing-and-payments.md) | Planned |

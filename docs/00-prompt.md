@@ -215,20 +215,26 @@ an `Idempotency-Key` header.
 - `GET /customers/:id/notifications`
 
 ### Subscriptions
-- `GET /subscriptions?status=past_due&q=`
+- `GET /subscriptions?status=past_due&q=&page=` (`q` searches customer name / email)
 - `POST /subscriptions`
-  Request: `{ "customer_id": 1, "plan_id": 2, "trial": true }` — Response: subscription with `status: "trialing"`.
+  Request: `{ "customer_id": 1, "plan_id": 2 }` — the plan decides: `trial_days > 0` starts
+  `trialing`, otherwise `active`. 422 `plan_archived` / `customer_already_subscribed`.
 - `GET /subscriptions/:id`
   ```json
   { "id": 7, "status": "active", "plan": {}, "current_period_start": "...", "current_period_end": "...",
     "trial_ends_at": null, "cancel_at_period_end": false, "access_suspended": false,
-    "lock_version": 4, "allowed_actions": ["cancel", "pause", "change_plan"],
+    "lock_version": 4, "allowed_actions": ["cancel_now", "cancel_at_period_end", "pause"],
     "open_dunning_case": null }
   ```
 - `POST /subscriptions/:id/cancel`
-  Request: `{ "at_period_end": true, "reason": "customer_requested", "lock_version": 4 }`
-- `POST /subscriptions/:id/pause` — Request: `{ "resumes_at": "2026-11-01" }` (optional)
-- `POST /subscriptions/:id/resume`
+  Request: `{ "at_period_end": true, "lock_version": 4 }`
+- `POST /subscriptions/:id/undo_cancel` — removes a scheduled cancellation.
+  Request: `{ "lock_version": 5 }`
+- `POST /subscriptions/:id/pause` — Request: `{ "resumes_at": "2026-11-01", "lock_version": 4 }`
+  (`resumes_at` optional, must be in the future)
+- `POST /subscriptions/:id/resume` — Request: `{ "lock_version": 6 }`
+- Every action requires `lock_version` (409 if stale) and returns the updated subscription;
+  an action missing from `allowed_actions` answers 422 `action_not_allowed`.
 - `POST /subscriptions/:id/plan_change_preview` — computes without persisting.
   Request: `{ "plan_id": 3, "strategy": "immediate" }`
   ```json
@@ -242,8 +248,9 @@ an `Idempotency-Key` header.
   Response: `{ "plan_change": {}, "invoice": {} | null }`
 - `GET /subscriptions/:id/plan_changes`
 - `GET /subscriptions/:id/state_transitions`
-  Response: `[{ "from_status": "active", "to_status": "past_due", "reason": "payment_failed", "trigger_source": "webhook", "webhook_event_id": 88, "occurred_at": "..." }]`
-- `GET /subscriptions/:id/audit_events?type=&page=` — feeds the timeline (screen 4).
+  Response: `{ "data": [{ "from_status": "active", "to_status": "past_due", "reason": "payment_failed", "actor_type": "webhook", "webhook_event_id": 88, "billing_event_id": 120, "occurred_at": "..." }] }`
+- The audit timeline (screen 4) uses `GET /billing_events?subscription_id=`: every
+  transition is also a billing event, so no separate endpoint is needed.
 
 ### Invoices
 - `GET /invoices?status=&subscription_id=`
@@ -348,13 +355,16 @@ someone calls `update_column`.
 - `paused_at`, `resumes_at`, `access_suspended_at`
 - `last_provider_event_at` — used to discard out-of-order events.
 - `lock_version` — optimistic locking.
-- Indexes on `status` and `current_period_end`.
+- Indexes on `status` and `current_period_end`; partial unique index on `customer_id` where
+  `status <> 'canceled'` (one live subscription per customer).
+- `status` can only change through `Subscriptions::Transition`; the model raises otherwise.
 
 **subscription_state_transitions** (append-only)
 - `subscription_id`, `from_status` (null on creation), `to_status`
 - `reason`: `trial_converted` / `payment_failed` / `payment_recovered` / `customer_requested` /
   `dunning_exhausted` / `reconciliation_correction` / ...
-- `trigger_source`: `webhook` / `admin` / `system_job` / `reconciliation`
+- `actor_type`: `webhook` / `admin` / `system_job` / `reconciliation` (same vocabulary as
+  `billing_events`)
 - `webhook_event_id` (nullable), `billing_event_id`, `occurred_at` (simulated clock time),
   `metadata` (json)
 - Index on (`subscription_id`, `occurred_at`).
@@ -430,8 +440,9 @@ someone calls `update_column`.
   events describing the same fact don't duplicate either.
 
 **idempotency_keys** (for our own API POSTs)
-- `key` (unique), `request_path`, `request_fingerprint` (body hash), `response_status`,
-  `response_body`, `locked_until`
+- `key` (unique), `request_fingerprint` (SHA-256 of method, path and body), `response_status`,
+  `response_body` (both null while the first request runs; 5xx responses are not kept, so a
+  retry can run again)
 
 ### Reconciliation, audit and simulation
 

@@ -24,6 +24,16 @@ transition path that validates it, records it and audits it.
 - Transitions caused by payments (`past_due`, recovery — plans 07 and 10).
 - Plan changes (plan 08).
 
+## Provisional behavior until plan 07
+
+To make pause, resume and the ticks demonstrable before invoicing exists:
+- a plan without a trial creates the subscription already `active` (first period not charged);
+- `Ticks::EndTrials` converts `trialing → active` when the trial ends, without charging;
+- `Ticks::RenewPeriods` rolls an active subscription's period forward when it ends, without
+  charging, so period dates (and "cancel at period end") never point to the past.
+
+Plan 07 replaces both with an invoice, and the conversion then waits for the payment webhook.
+
 ## Backend
 
 ### Transition table
@@ -34,12 +44,12 @@ transition path that validates it, records it and audits it.
 | (none) | `active` | `subscription_created` (no trial, plan 07) |
 | `trialing` | `active` | `trial_converted` |
 | `trialing` | `past_due` | `payment_failed` |
-| `trialing` | `canceled` | `customer_requested` |
+| `trialing` | `canceled` | `customer_requested`, `period_ended_after_cancel_request` |
 | `active` | `past_due` | `payment_failed` |
 | `active` | `paused` | `customer_requested` |
 | `active` | `canceled` | `customer_requested`, `period_ended_after_cancel_request` |
 | `past_due` | `active` | `payment_recovered` |
-| `past_due` | `canceled` | `dunning_exhausted`, `customer_requested` |
+| `past_due` | `canceled` | `dunning_exhausted`, `customer_requested`, `period_ended_after_cancel_request` |
 | `paused` | `active` | `customer_requested`, `pause_ended` |
 | `paused` | `canceled` | `customer_requested` |
 | `canceled` | — | terminal |
@@ -76,13 +86,17 @@ The Mermaid version of this table goes into the README.
   Rejects archived plans and a customer with another non-canceled subscription.
 - `Subscriptions::Cancel` — `at_period_end: true` only sets the flag (audited, no
   transition); `false` transitions now.
+- `Subscriptions::UndoCancel` — removes a scheduled cancellation.
 - `Subscriptions::Pause` / `Resume` — optional `resumes_at`.
 - All take `lock_version` from the client; a mismatch is a 409.
 
 ### Tick steps
 - `Ticks::CancelAtPeriodEnd` — period end reached and flag set → `canceled`
   (`period_ended_after_cancel_request`, actor `system_job`).
+- `Ticks::EndTrials` — provisional (see above).
 - `Ticks::ResumePaused` — `resumes_at` reached → `active` (`pause_ended`).
+- Order: cancel-at-period-end runs before trial conversion, so a trial scheduled to cancel
+  ends instead of converting.
 
 ### API idempotency keys
 - `idempotency_keys` table as in `00-prompt.md` §10.
@@ -92,8 +106,9 @@ The Mermaid version of this table goes into the README.
   "Cancel" and "Change plan".
 
 ### Endpoints
-From `00-prompt.md` §9, **Subscriptions**: list, create, show, cancel, pause, resume,
-`state_transitions`, `audit_events`.
+From `00-prompt.md` §9, **Subscriptions**: list, create, show, cancel, undo_cancel, pause,
+resume, `state_transitions`. The timeline reads `GET /billing_events?subscription_id=`.
+Transition rows use `actor_type` (same vocabulary as `billing_events`).
 
 ## Frontend
 
