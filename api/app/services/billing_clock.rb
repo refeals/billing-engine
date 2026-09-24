@@ -35,8 +35,11 @@ module BillingClock
 
     private
 
+    # Two first reads can race to create the row. create_or_find_by! relies on the primary
+    # key to pick a winner and returns the existing row to the loser instead of raising.
     def clock
-      SimulationClock.find_or_create_by!(id: 1) { |created| created.current_time = real_time }
+      SimulationClock.find_by(id: 1) ||
+        SimulationClock.create_or_find_by!(id: 1) { |created| created.current_time = real_time }
     end
 
     def real_time
@@ -44,7 +47,8 @@ module BillingClock
     end
 
     def parse_days(value)
-      days = Integer(value, exception: false) if value.is_a?(Integer) || value.to_s.match?(/\A\d+\z/)
+      # Base 10 is explicit: Integer("010") would otherwise be read as octal (8 days).
+      days = Integer(value.to_s, 10) if value.is_a?(Integer) || value.to_s.match?(/\A\d+\z/)
       return days if days&.between?(1, MAX_ADVANCE_DAYS)
 
       raise DomainError.new(

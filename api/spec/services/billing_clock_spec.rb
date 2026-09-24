@@ -12,6 +12,14 @@ RSpec.describe BillingClock do
       expect { described_class.now }.to change(SimulationClock, :count).from(0).to(1)
       expect(described_class.now).to eq(real_now)
     end
+
+    it "uses the existing row when another request created it first" do
+      SimulationClock.create!(id: 1, current_time: real_now - 3.days)
+      allow(SimulationClock).to receive(:find_by).and_return(nil)
+
+      expect(described_class.now).to eq(real_now - 3.days)
+      expect(SimulationClock.count).to eq(1)
+    end
   end
 
   describe ".advance!" do
@@ -38,6 +46,11 @@ RSpec.describe BillingClock do
 
     it "accepts days as a numeric string, as it arrives from params" do
       expect(described_class.advance!(days: "2")[:ticks_run]).to eq(2)
+    end
+
+    it "reads zero-padded strings as decimal, not octal" do
+      expect(described_class.advance!(days: "010")[:ticks_run]).to eq(10)
+      expect(described_class.advance!(days: "08")[:ticks_run]).to eq(8)
     end
 
     [ 0, 31, -1, 1.5, "abc", nil ].each do |invalid|
