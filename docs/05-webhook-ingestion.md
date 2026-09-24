@@ -28,22 +28,25 @@ out-of-order delivery, and is ready to receive real Stripe events later without 
 
 ### `webhook_events`
 - Columns as in `00-prompt.md` §10.
-- FK from `billing_events.webhook_event_id` and `subscription_state_transitions.webhook_event_id`
-  added here.
+- `billing_events.webhook_event_id` and `subscription_state_transitions.webhook_event_id` are
+  filled from `Current.webhook_event`, without foreign keys (adding one in SQLite rebuilds
+  those append-only tables and drops their triggers).
 
 ### Ingestion flow (`Webhooks::Ingest`)
-1. `SignatureVerifier.verify!(raw_body, headers)` — interface with a `NullSignatureVerifier`
-   today. The real one (Stripe) is a future improvement.
-2. **Claim** (own transaction): insert the row with `processing_status: processing` using
-   `INSERT … ON CONFLICT(provider_event_id) DO NOTHING`.
-   - Inserted → go to step 3.
-   - Not inserted, existing row `processed` / `skipped_stale` / `ignored_unhandled` →
-     increment `duplicate_deliveries_count`, audit `webhook.duplicate_received`, return
-     `duplicate`.
-   - Not inserted, existing row `failed` → this is a provider retry, not a duplicate: go to
-     step 3 with the existing row.
-3. **Process** (second transaction): run the handler and mark the row `processed` in the same
-   transaction, so the side effects and the "done" mark commit together or not at all.
+1. `SignatureVerifier.current.verify!(payload:, headers:)` — `NullSignatureVerifier` while the
+   simulator is on (the fake provider doesn't sign); otherwise `RejectingSignatureVerifier`,
+   which refuses every event (400 `invalid_signature`) until real Stripe verification exists.
+   Fail closed, not open.
+2. **Claim** (own transaction): insert the row with `processing_status: received` using
+   `INSERT … ON CONFLICT(provider_event_id) DO NOTHING`, then load the row.
+3. **Process** (`Webhooks::ProcessEvent`, second transaction): lock and re-read the row.
+   - Already `processed` / `skipped_stale` / `ignored_unhandled` → increment
+     `duplicate_deliveries_count`, audit `webhook.duplicate_received`, return `duplicate`.
+   - `received` or `failed` (a first delivery, a provider retry, or a delivery whose
+     previous attempt died mid-way) → run the handler and mark the terminal status in the
+     same transaction, so the side effects and the "done" mark commit together or not at all.
+   Checking inside the locked transaction (not at claim time) is what makes two racing
+   deliveries safe: whichever commits second sees the terminal status and stops.
 4. On handler exception: mark `failed` with `last_error` and `attempts + 1` in a separate
    transaction, respond **500**. A non-2xx response is what makes the provider retry.
 
@@ -72,10 +75,14 @@ the unique index is still the real guarantee and is what the tests assert.
   subscription state, so these handlers record the provider's view
   (`last_provider_event_at`, audit `provider.subscription_observed`) and don't transition.
   Disagreements are reconciliation's job (plan 11).
+- An event about a subscription we don't know raises `Webhooks::UnknownObject`: the row is
+  `failed` and the provider retries, instead of the event being lost.
+- Recording `last_provider_event_at` uses `update_columns`, so observing an event doesn't
+  bump `lock_version` and make an operator's open screen stale.
 
 ### Endpoints
-From `00-prompt.md` §9, **Webhooks**. `reprocess` runs step 3 for `failed` rows only;
-anything else → 422 `already_processed`.
+From `00-prompt.md` §9, **Webhooks**. `reprocess` runs step 3 for `failed` or `received`
+rows only; anything else → 422 `already_processed`.
 
 ## Frontend
 

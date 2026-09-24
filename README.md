@@ -90,6 +90,34 @@ Updating `status` any other way raises.
 A cancellation "at period end" is a flag, not a state: the subscription keeps its status
 until the period ends, and the flag can be removed until then.
 
+## Webhook processing
+
+Provider events arrive at `POST /api/v1/webhooks/stripe` and go through an inbox
+(`webhook_events`), one row per provider event id:
+
+1. **Claim.** `INSERT … ON CONFLICT (provider_event_id) DO NOTHING` guarantees one row per
+   event, however many deliveries race.
+2. **Process.** A second transaction locks and re-reads the row. If it is already done, the
+   delivery is a duplicate: it is counted and answered 200. Otherwise the handler runs and
+   its changes commit together with the row's final status, so an event can't be half
+   applied, or applied twice.
+3. **Fail loudly.** If the handler raises, its changes roll back and a third transaction
+   records the failure on the row; the endpoint answers 500, which is what makes the
+   provider retry. A failed row can also be reprocessed from the inbox screen.
+
+Every change a webhook causes is audited with actor `webhook` and a link to the inbox row,
+so the audit log can always answer "which event did this?".
+
+Try it with the fixture (an event type the engine doesn't handle yet, so it is acknowledged
+and ignored):
+
+```sh
+curl -s -X POST localhost:3001/api/v1/webhooks/stripe \
+  -H 'Content-Type: application/json' -d @api/spec/fixtures/webhooks/invoice_paid.json
+# {"status":"ignored_unhandled",...}  — send it again:
+# {"status":"duplicate",...}          — the inbox shows one row with 1 duplicate delivery
+```
+
 ## Architecture decisions
 
 - **Simulated clock.** Billing flows span weeks (trials, renewals, a 14-day dunning
@@ -132,8 +160,17 @@ until the period ends, and the flag can be removed until then.
   both can't disagree.
 - **Provisional until invoicing (plan 07).** Trials currently convert to active when they end
   and active periods roll forward when they end, both without charging, and plans without a
-  trial start active. Plan 07 replaces this with an
-  invoice and a payment webhook.
+  trial start active. Plan 07 replaces this with an invoice and a payment webhook.
+- **Inbox pattern for webhooks, deduplicated by event id.** The provider's event id is the
+  idempotency key, backed by a unique index. Duplicates and deliberately ignored event types
+  get 200 (anything else makes the provider retry forever); a failed handler gets 500 so the
+  provider does retry.
+- **The engine is the authority on subscription state.** `customer.subscription.*` events are
+  recorded ("the provider says past_due, we say active"), not applied. Disagreements are for
+  reconciliation to surface, instead of the provider silently overwriting engine decisions.
+- **Ordering per object.** Each record remembers the newest provider event applied to it and
+  skips older ones. The check is per record: an old event about one invoice is still valid
+  after a newer event about another.
 - **Money as integer cents.** Every amount is stored as `*_cents` integers with a `currency`
   column (always `USD`). Floats never touch money.
 - **One error shape, one list shape.** Every API error is
@@ -175,6 +212,21 @@ until the period ends, and the flag can be removed until then.
 - Pause with an automatic resume date; an open-ended pause stays paused until resumed.
 - One live subscription per customer, enforced by a partial unique index as well as by the
   service.
+- The same webhook delivered several times is applied once and counted as duplicates.
+- Two deliveries of the same event racing each other: the lock and re-read inside the
+  processing transaction let only one apply it.
+- A webhook handler that fails leaves no partial changes, keeps its error on the inbox row,
+  answers 500 so the provider retries, and succeeds on the next delivery.
+- An event older than one already applied to the same record is skipped as stale; events
+  sharing a timestamp are all processed.
+- Unknown event types are acknowledged and ignored; an event about a subscription the engine
+  doesn't know fails (and is retried) instead of being dropped; a malformed payload (bad
+  JSON, missing fields, `data.object` that isn't an object) gets 400, never a 500 that the
+  provider would retry forever.
+- Unsigned events are only accepted while the simulator is on; with it off, the endpoint
+  refuses everything until real signature verification exists (fail closed).
+- Recording a webhook doesn't bump the subscription's `lock_version`, so an operator's open
+  screen isn't invalidated by an event that changed nothing.
 - Money typed by the operator is parsed digit by digit, never through floating point, and an
   ambiguous comma (`12,5`) is rejected instead of guessed.
 
@@ -189,7 +241,7 @@ agreed decision live in [`docs/00-prompt.md`](docs/00-prompt.md).
 | 02 | [Audit log](docs/02-audit-log.md) | Done |
 | 03 | [Catalog and customers](docs/03-catalog-and-customers.md) | Done |
 | 04 | [Subscription state machine](docs/04-subscription-state-machine.md) | Done |
-| 05 | [Webhook ingestion and idempotency](docs/05-webhook-ingestion.md) | Planned |
+| 05 | [Webhook ingestion and idempotency](docs/05-webhook-ingestion.md) | Done |
 | 06 | [Fake payment provider](docs/06-fake-payment-provider.md) | Planned |
 | 07 | [Invoicing and payments](docs/07-invoicing-and-payments.md) | Planned |
 | 08 | [Plan changes and proration](docs/08-plan-changes-and-proration.md) | Planned |

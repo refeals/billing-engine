@@ -267,12 +267,14 @@ an `Idempotency-Key` header.
   { "id": "evt_1Q...", "type": "invoice.payment_failed", "created": 1790000000,
     "data": { "object": { "id": "in_...", "subscription": "sub_...", "attempt_count": 1 } } }
   ```
-  Responses: `200 { "status": "processed" }`, `200 { "status": "duplicate" }` or
-  `200 { "status": "skipped_stale" }`. Duplicates also get 200, otherwise the provider keeps
+  Responses: `200 { "status": "processed" | "duplicate" | "skipped_stale" | "ignored_unhandled" }`
+  and `500 { "status": "failed" }` (so the provider retries); 400 `invalid_payload` for a body
+  that isn't a readable event. Duplicates also get 200, otherwise the provider keeps
   retrying. Signature verification sits behind an interface that is a no-op today.
-- `GET /webhook_events?status=&type=`
-- `GET /webhook_events/:id`
-- `POST /webhook_events/:id/reprocess` — `failed` only. Otherwise 422 `already_processed`.
+- `GET /webhook_events?status=&event_type=&page=`
+- `GET /webhook_events/:id` — includes `payload` and the billing events the event caused.
+- `POST /webhook_events/:id/reprocess` — `failed` or `received` only. Otherwise 422
+  `already_processed`.
 
 ### Dunning
 - `GET /dunning_cases?status=open`
@@ -430,12 +432,17 @@ someone calls `update_column`.
 - `delivery_status` (`pending` / `delivered` / `dropped`), `delivery_count`, `scenario_run_id`
 
 **webhook_events** (our inbox — where idempotency lives)
-- `provider_event_id` (**UNIQUE**), `event_type`, `payload`, `provider_created_at`, `received_at`
-- `processing_status`: `processing` / `processed` / `failed` / `skipped_stale` / `ignored_unhandled`
+- `provider_event_id` (**UNIQUE**), `event_type`, `provider_object_id`, `payload`,
+  `provider_created_at`, `received_at` (simulated time)
+- `processing_status`: `received` / `processed` / `failed` / `skipped_stale` / `ignored_unhandled`
 - `processed_at`, `attempts`, `last_error`, `duplicate_deliveries_count`
-- Flow: `INSERT … ON CONFLICT(provider_event_id) DO NOTHING`. If nothing was inserted, it's a
-  duplicate: increment the counter and return 200. Otherwise process it in a single
-  transaction together with the domain side effects.
+- Flow: `INSERT … ON CONFLICT(provider_event_id) DO NOTHING` claims the row. Processing then
+  runs in a second transaction that locks and re-reads the row: if it is already terminal,
+  it's a duplicate (counter + 200); otherwise the handler's side effects and the terminal
+  status commit together. A handler failure is recorded in a third transaction.
+- No foreign keys point here from `billing_events` / `subscription_state_transitions`:
+  those are append-only tables, and adding a foreign key in SQLite rebuilds the table and
+  drops its triggers.
 - Second layer: unique `provider_invoice_id` and `provider_charge_id`, so two *different*
   events describing the same fact don't duplicate either.
 
