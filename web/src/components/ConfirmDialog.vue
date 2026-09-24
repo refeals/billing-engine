@@ -3,7 +3,16 @@ import BaseButton from '@/components/BaseButton.vue'
 import BaseDialog from '@/components/BaseDialog.vue'
 
 const open = defineModel<boolean>('open', { required: true })
-defineProps<{ title: string; confirmLabel: string; pending?: boolean; error?: string | null }>()
+withDefaults(
+  defineProps<{
+    title: string
+    confirmLabel: string
+    pending?: boolean
+    error?: string | null
+    variant?: 'primary' | 'danger'
+  }>(),
+  { pending: false, error: null, variant: 'danger' },
+)
 defineEmits<{ confirm: [] }>()
 </script>
 
@@ -14,7 +23,7 @@ defineEmits<{ confirm: [] }>()
       <p v-if="error" class="text-danger" role="alert">{{ error }}</p>
       <div class="flex justify-end gap-2">
         <BaseButton @click="open = false">Cancel</BaseButton>
-        <BaseButton variant="danger" :disabled="pending" @click="$emit('confirm')">
+        <BaseButton :variant="variant" :disabled="pending" @click="$emit('confirm')">
           {{ confirmLabel }}
         </BaseButton>
       </div>

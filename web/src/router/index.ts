@@ -10,6 +10,24 @@ const router = createRouter({
       meta: { title: 'Dashboard' },
     },
     {
+      path: '/subscriptions',
+      name: 'subscriptions',
+      component: () => import('@/features/subscriptions/SubscriptionsView.vue'),
+      meta: { title: 'Subscriptions' },
+    },
+    {
+      path: '/subscriptions/:id',
+      name: 'subscription',
+      component: () => import('@/features/subscriptions/SubscriptionDetailView.vue'),
+      meta: { title: 'Subscription' },
+    },
+    {
+      path: '/subscriptions/:id/history',
+      name: 'subscription-history',
+      component: () => import('@/features/subscriptions/SubscriptionHistoryView.vue'),
+      meta: { title: 'Subscription history' },
+    },
+    {
       path: '/plans',
       name: 'plans',
       component: () => import('@/features/plans/PlansView.vue'),

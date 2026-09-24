@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import {
   fetchCreditLedger,
@@ -9,14 +9,17 @@ import {
   type PaymentMethod,
 } from '@/api/customers'
 import { toApiError } from '@/api/errors'
+import type { Subscription } from '@/api/subscriptions'
 import BaseBadge from '@/components/BaseBadge.vue'
 import BaseButton from '@/components/BaseButton.vue'
 import EmptyState from '@/components/EmptyState.vue'
 import PaginationNav from '@/components/PaginationNav.vue'
+import StatusBadge from '@/components/StatusBadge.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
 import { useClockRefresh } from '@/composables/useClockRefresh'
 import { formatDate, formatMoney } from '@/utils/format'
 import { humanize } from '@/utils/text'
+import NewSubscriptionDialog from '@/features/subscriptions/NewSubscriptionDialog.vue'
 import CreditAdjustmentDialog from './CreditAdjustmentDialog.vue'
 import PaymentMethodDialog from './PaymentMethodDialog.vue'
 
@@ -41,6 +44,19 @@ watch(customerId, () => {
   reloadAll()
 })
 watch(ledgerPage, ledgerData.reload)
+
+const router = useRouter()
+const subscribing = ref(false)
+// The API allows one live subscription per customer; the button follows the same rule.
+const hasLiveSubscription = computed(
+  () =>
+    customer.value?.subscriptions.some((subscription) => subscription.status !== 'canceled') ??
+    false,
+)
+
+function onSubscribed(subscription: Subscription) {
+  router.push({ name: 'subscription', params: { id: subscription.id } })
+}
 
 const addingCard = ref(false)
 const adjustingCredit = ref(false)
@@ -178,10 +194,34 @@ function expiry(paymentMethod: PaymentMethod) {
       </div>
 
       <section class="rounded-lg border border-border bg-surface">
-        <h3 class="border-b border-border px-5 py-3 text-sm font-semibold">Subscriptions</h3>
+        <div class="flex items-center justify-between border-b border-border px-5 py-3">
+          <h3 class="text-sm font-semibold">Subscriptions</h3>
+          <BaseButton v-if="!hasLiveSubscription" @click="subscribing = true"
+            >New subscription</BaseButton
+          >
+        </div>
+        <ul v-if="customer.subscriptions.length > 0">
+          <li
+            v-for="subscription in customer.subscriptions"
+            :key="subscription.id"
+            class="flex flex-wrap items-center gap-3 border-b border-border px-5 py-3 last:border-b-0"
+          >
+            <RouterLink
+              :to="{ name: 'subscription', params: { id: subscription.id } }"
+              class="flex-1 text-sm font-medium hover:text-accent"
+            >
+              {{ subscription.plan.name }}
+            </RouterLink>
+            <span v-if="subscription.cancel_at_period_end" class="text-xs text-ink-muted">
+              Cancels {{ formatDate(subscription.current_period_end) }}
+            </span>
+            <StatusBadge :status="subscription.status" />
+          </li>
+        </ul>
         <EmptyState
+          v-else
           title="No subscriptions yet"
-          description="Subscriptions for this studio will be listed here."
+          description="Subscribe this studio to a plan to start billing it."
         />
       </section>
 
@@ -190,6 +230,11 @@ function expiry(paymentMethod: PaymentMethod) {
         :customer-id="customer.id"
         :has-cards="customer.payment_methods.length > 0"
         @attached="customerData.reload"
+      />
+      <NewSubscriptionDialog
+        v-model:open="subscribing"
+        :customer="{ id: customer.id, name: customer.name }"
+        @created="onSubscribed"
       />
       <CreditAdjustmentDialog
         v-model:open="adjustingCredit"

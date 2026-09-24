@@ -1,5 +1,6 @@
 import { apiRequest } from './client'
 import { toQueryString } from './query'
+import type { SubscriptionStatus } from './subscriptions'
 import type { Paginated } from './types'
 
 export interface Customer {
@@ -24,8 +25,17 @@ export interface PaymentMethod {
   behavior: string
 }
 
+export interface CustomerSubscriptionSummary {
+  id: number
+  status: SubscriptionStatus
+  plan: { id: number; name: string; code: string }
+  current_period_end: string
+  cancel_at_period_end: boolean
+}
+
 export interface CustomerDetail extends Customer {
   payment_methods: PaymentMethod[]
+  subscriptions: CustomerSubscriptionSummary[]
 }
 
 export type CreditReason =
