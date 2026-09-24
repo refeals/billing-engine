@@ -236,7 +236,9 @@ an `Idempotency-Key` header.
 - Every action requires `lock_version` (409 if stale) and returns the updated subscription;
   an action missing from `allowed_actions` answers 422 `action_not_allowed`.
 - `POST /subscriptions/:id/plan_change_preview` — computes without persisting.
-  Request: `{ "plan_id": 3, "strategy": "immediate" }`
+  Request: `{ "plan_id": 3, "strategy": "immediate" }` (`strategy` optional; 422
+  `strategy_not_allowed` lists the allowed ones: upgrades immediate only, downgrades and
+  same-price changes immediate or at period end, trials immediate without proration)
   ```json
   { "proration_date": "...", "remaining_ratio": "0.5333",
     "lines": [ { "kind": "proration_credit", "amount_cents": -10613 },
@@ -244,9 +246,14 @@ an `Idempotency-Key` header.
     "net_cents": -5333, "credit_to_balance_cents": 5333, "amount_due_now_cents": 0 }
   ```
 - `POST /subscriptions/:id/plan_changes` — executes the change. Same payload as the preview
-  plus `proration_date` and `lock_version`, so the charged amount matches what was shown.
+  plus the preview's `quote_token` (a signed copy of the `proration_date` it used) and
+  `lock_version`, so the charged amount matches what was shown and the date can't be chosen
+  by the client. 422 `quote_token_required` / `invalid_quote_token`.
   Response: `{ "plan_change": {}, "invoice": {} | null }`
 - `GET /subscriptions/:id/plan_changes`
+- `POST /subscriptions/:id/plan_changes/:plan_change_id/cancel` — drops a scheduled change.
+- 409 `stale_preview` when the preview's proration date is no longer inside the current
+  period (the subscription renewed in between).
 - `GET /subscriptions/:id/state_transitions`
   Response: `{ "data": [{ "from_status": "active", "to_status": "past_due", "reason": "payment_failed", "actor_type": "webhook", "webhook_event_id": 88, "billing_event_id": 120, "occurred_at": "..." }] }`
 - The audit timeline (screen 4) uses `GET /billing_events?subscription_id=`: every
@@ -377,10 +384,12 @@ someone calls `update_column`.
 
 **plan_changes**
 - `subscription_id`, `from_plan_id`, `to_plan_id`
-- `strategy` (`immediate` / `at_period_end`), `status` (`scheduled` / `applied` / `canceled`)
+- `kind` (`upgrade` / `downgrade` / `lateral` / `trial_swap`)
+- `strategy` (`immediate` / `at_period_end`), `status` (`scheduled` / `applied` / `canceled`);
+  at most one `scheduled` per subscription (partial unique index)
 - `proration_date`, `effective_at`
-- `credit_cents`, `charge_cents`, `net_cents`
-- `invoice_id` (nullable)
+- `credit_cents`, `charge_cents`, `net_cents` (check: `net = credit + charge`)
+- `invoice_id` (nullable: only upgrades produce a proration invoice)
 
 ### Billing
 

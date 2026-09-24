@@ -63,6 +63,21 @@ the preview showed.
   invoice. Documented choice: reverting the plan would need its own compensation logic and
   Stripe's default behaves the same way.
 
+### Decisions taken during implementation
+- **The kind decides the strategy:** upgrade → immediate only; downgrade and same price →
+  immediate or at period end; trial → immediate swap, no proration.
+- **`change_plan` is an allowed action** for `trialing` and `active` subscriptions without a
+  scheduled cancellation.
+- **Exact arithmetic:** times are converted with `to_r`, so the ratio is an exact `Rational`.
+- **The proration invoice also spends credit**, through the same `Invoices::Issue`.
+- **Scheduled changes are canceled with the subscription** (in `Subscriptions::Transition`),
+  and scheduling a new one cancels the previous (one per subscription, enforced by the DB).
+- **Preview and apply share `PlanChanges::Quote`**, so they can't compute differently.
+- **The proration date travels as a signed `quote_token`** (Rails message verifier) that
+  binds subscription, target plan, strategy and date. Apply only accepts dates the server
+  issued: a client can't backdate a downgrade to the period start to collect credit for time
+  already used (422 `quote_token_required` / `invalid_quote_token`).
+
 ## Frontend
 
 - Screen 5 **Change plan** modal: plan select, strategy radio (immediate disabled with a

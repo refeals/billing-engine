@@ -114,6 +114,39 @@ sequenceDiagram
   expiry date against the simulated clock.
 - An open invoice can be retried from its screen with the customer's current default card.
 
+## Proration
+
+Changing plans mid-period credits the unused part of the old plan and charges the new plan
+for the time left:
+
+```
+ratio  = time left in the period / length of the period      (exact Rational)
+credit = -(old price × ratio)   rounded half up to the cent
+charge =   new price × ratio    rounded half up to the cent
+net    = credit + charge
+```
+
+Worked example (numbers from the calculator's spec): a $49/month subscription whose period is
+Oct 1 – Nov 1 (31 days) upgrades to $99/month on Oct 11, with 21 days left:
+
+| Line | Amount |
+|---|---|
+| Unused time on Basic: −$49.00 × 21/31 | −$33.19 |
+| Remaining time on Pro: $99.00 × 21/31 | +$67.06 |
+| **Charged now** | **$33.87** |
+
+- **Upgrades** are billed immediately through a proration invoice for the rest of the period;
+  the billing anchor doesn't move. If that payment fails, the new plan stays and the
+  subscription goes `past_due`, like any unpaid invoice (Stripe's default).
+- **Downgrades** turn the unused difference into credit (or wait for the renewal, if the
+  operator prefers); the next invoice spends it before charging the card.
+- **What is charged is what was previewed.** Preview and apply run the same quote, and apply
+  must send back the preview's `quote_token`, a signed copy of the proration date the server
+  used (a client can't backdate it to grant itself more credit). If the period renewed in
+  between, the API
+  answers 409 instead of charging a different amount.
+- Each line is rounded on its own, so invoice lines always add up exactly to the net shown.
+
 ## Webhook processing
 
 Provider events arrive at `POST /api/v1/webhooks/stripe` and go through an inbox
@@ -322,6 +355,19 @@ curl -s -X POST localhost:3001/api/v1/webhooks/stripe \
 - A trial is invoiced once, even if its payment keeps failing; a paused subscription is not
   billed for the paused time.
 - An invoice number rolled back with its invoice is reused, so the sequence has no gaps.
+- A downgrade's unused difference becomes credit that the next renewal consumes; an upgrade
+  whose payment fails keeps the new plan and moves the subscription to `past_due`.
+- Two plan changes in the same period: each one prorates from the plan in effect at that
+  moment.
+- The clock moving between preview and confirm doesn't change the amount (the preview's
+  date is reused); a renewal in between makes the preview stale (409). The date comes back
+  as a signed token, so it can't be backdated to inflate a credit or a charge.
+- A plan change during a trial swaps the plan without moving money; the trial-end invoice is
+  at the new price.
+- A change scheduled for the end of the period is applied by the renewal, which bills the new
+  price; scheduling another replaces it, and canceling the subscription drops it.
+- Changing between monthly and yearly billing is refused (not supported) instead of being
+  prorated wrongly.
 - Money typed by the operator is parsed digit by digit, never through floating point, and an
   ambiguous comma (`12,5`) is rejected instead of guessed.
 
@@ -339,7 +385,7 @@ agreed decision live in [`docs/00-prompt.md`](docs/00-prompt.md).
 | 05 | [Webhook ingestion and idempotency](docs/05-webhook-ingestion.md) | Done |
 | 06 | [Fake payment provider](docs/06-fake-payment-provider.md) | Done |
 | 07 | [Invoicing and payments](docs/07-invoicing-and-payments.md) | Done |
-| 08 | [Plan changes and proration](docs/08-plan-changes-and-proration.md) | Planned |
+| 08 | [Plan changes and proration](docs/08-plan-changes-and-proration.md) | Done |
 | 09 | [Refunds](docs/09-refunds.md) | Planned |
 | 10 | [Dunning](docs/10-dunning.md) | Planned |
 | 11 | [Reconciliation](docs/11-reconciliation.md) | Planned |
