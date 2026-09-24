@@ -10,7 +10,9 @@ module Webhooks
         "charge.succeeded" => ChargeRecorded,
         "charge.failed" => ChargeRecorded,
         "invoice.paid" => InvoicePaid,
-        "invoice.payment_failed" => InvoicePaymentFailed
+        "invoice.payment_failed" => InvoicePaymentFailed,
+        "refund.updated" => RefundUpdated,
+        "charge.refunded" => ChargeRefunded
       }.freeze
 
       def self.for(event_type)

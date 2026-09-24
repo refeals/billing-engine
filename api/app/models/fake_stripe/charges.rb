@@ -17,6 +17,14 @@ module FakeStripe
         end
       end
 
+      # What the provider already gave back on a charge, from its own refund events.
+      def refunded_on(charge_id)
+        MockedWebhookEvent.where(event_type: "refund.updated")
+          .where("json_extract(payload, '$.data.object.charge') = ?", charge_id)
+          .where("json_extract(payload, '$.data.object.status') = 'succeeded'")
+          .sum("json_extract(payload, '$.data.object.amount')").to_i
+      end
+
       def attempts_for(invoice_id)
         charge_events.where("json_extract(payload, '$.data.object.invoice') = ?", invoice_id).count
       end

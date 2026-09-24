@@ -34,7 +34,21 @@ module Api
         render json: InvoiceSerializer.new(invoice.reload, detail: true)
       end
 
+      # The response is the refreshed invoice: for a card refund, the provider's webhook has
+      # already settled it by the time this responds.
+      def refund
+        Refunds::Create.call(invoice, amount_cents: amount_cents, destination: params[:destination], reason: params[:reason])
+        render json: InvoiceSerializer.new(invoice.reload, detail: true), status: :created
+      end
+
       private
+
+      def amount_cents
+        value = Integer(params.require(:amount_cents).to_s, 10, exception: false)
+        return value if value
+
+        raise DomainError.new("amount_cents must be a whole number of cents", code: "invalid_amount")
+      end
 
       def invoice
         @invoice ||= Invoice.includes(:customer, :subscription).find(params[:id])

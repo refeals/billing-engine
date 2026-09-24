@@ -6,6 +6,7 @@ class Invoice < ApplicationRecord
   belongs_to :customer
   has_many :line_items, -> { order(:id) }, class_name: "InvoiceLineItem", dependent: :restrict_with_exception
   has_many :payment_attempts, -> { order(:attempted_at, :id) }, dependent: :restrict_with_exception
+  has_many :refunds, dependent: :restrict_with_exception
 
   # Once issued, what the invoice asks for is fixed: corrections are new documents (credit,
   # refunds), never edits. Only the settlement fields (paid, refunded, due, status) move.
@@ -23,6 +24,14 @@ class Invoice < ApplicationRecord
 
   def audit_references
     { subscription_id: subscription_id, customer_id: customer_id }
+  end
+
+  # What the card paid that hasn't been refunded or promised back yet. Credit applied to the
+  # invoice isn't cash, so it isn't refundable.
+  def refundable_cents
+    return 0 unless paid?
+
+    amount_paid_cents - refunds.counting.sum(:amount_cents)
   end
 
   def open_for_payment?

@@ -13,7 +13,9 @@ module FakeStripe
       Card.new("pm_card_chargeDeclinedExpiredCard", "visa", "0069", "expired_card",
         "Declined as expired, whatever the expiry date"),
       Card.new("pm_card_succeedsAfterFailures_2", "visa", "3220", "succeeds_after_failures",
-        "Declined twice, then succeeds (models a customer fixing their card)")
+        "Declined twice, then succeeds (models a customer fixing their card)"),
+      # Charges go through; refunds to it fail, like Stripe's refund-failure test card.
+      Card.new("pm_card_refundFail", "visa", "5126", "succeeds", "Charges succeed, refunds fail")
     ].index_by(&:token).freeze
 
     def self.all

@@ -87,18 +87,6 @@ CREATE UNIQUE INDEX "index_mocked_webhook_events_on_event_id" ON "mocked_webhook
 CREATE INDEX "index_mocked_webhook_events_on_provider_subscription_id" ON "mocked_webhook_events" ("provider_subscription_id");
 CREATE INDEX "index_mocked_webhook_events_on_delivery_status" ON "mocked_webhook_events" ("delivery_status");
 CREATE TABLE IF NOT EXISTS "invoice_number_sequences" ("year" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "last_value" integer DEFAULT 0 NOT NULL);
-CREATE TABLE IF NOT EXISTS "invoices" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "subscription_id" integer NOT NULL, "customer_id" integer NOT NULL, "provider_invoice_id" varchar NOT NULL, "number" varchar NOT NULL, "status" varchar NOT NULL, "billing_reason" varchar NOT NULL, "period_start" datetime(6) NOT NULL, "period_end" datetime(6) NOT NULL, "subtotal_cents" integer NOT NULL, "credit_applied_cents" integer DEFAULT 0 NOT NULL, "total_cents" integer NOT NULL, "amount_paid_cents" integer DEFAULT 0 NOT NULL, "amount_refunded_cents" integer DEFAULT 0 NOT NULL, "amount_due_cents" integer NOT NULL, "currency" varchar DEFAULT 'USD' NOT NULL, "issued_at" datetime(6) NOT NULL, "paid_at" datetime(6), "attempt_count" integer DEFAULT 0 NOT NULL, "last_provider_event_at" datetime(6), "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL, CONSTRAINT "fk_rails_457c900f6e"
-FOREIGN KEY ("subscription_id")
-  REFERENCES "subscriptions" ("id")
-, CONSTRAINT "fk_rails_0d349e632f"
-FOREIGN KEY ("customer_id")
-  REFERENCES "customers" ("id")
-, CONSTRAINT invoices_status_known CHECK (status IN ('open', 'paid', 'void', 'uncollectible')), CONSTRAINT invoices_billing_reason_known CHECK (billing_reason IN ('subscription_create', 'subscription_cycle', 'subscription_update', 'manual')), CONSTRAINT invoices_amounts_non_negative CHECK (subtotal_cents >= 0 AND credit_applied_cents >= 0 AND amount_paid_cents >= 0 AND amount_refunded_cents >= 0 AND amount_due_cents >= 0), CONSTRAINT invoices_total_consistent CHECK (total_cents = subtotal_cents - credit_applied_cents));
-CREATE INDEX "index_invoices_on_subscription_id" ON "invoices" ("subscription_id");
-CREATE INDEX "index_invoices_on_customer_id" ON "invoices" ("customer_id");
-CREATE UNIQUE INDEX "index_invoices_on_provider_invoice_id" ON "invoices" ("provider_invoice_id");
-CREATE UNIQUE INDEX "index_invoices_on_number" ON "invoices" ("number");
-CREATE INDEX "index_invoices_on_status" ON "invoices" ("status");
 CREATE TABLE IF NOT EXISTS "invoice_line_items" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "invoice_id" integer NOT NULL, "kind" varchar NOT NULL, "description" varchar NOT NULL, "plan_id" integer, "amount_cents" integer NOT NULL, "period_start" datetime(6), "period_end" datetime(6), "created_at" datetime(6) NOT NULL, CONSTRAINT "fk_rails_1b1f533054"
 FOREIGN KEY ("plan_id")
   REFERENCES "plans" ("id")
@@ -152,7 +140,30 @@ FOREIGN KEY ("invoice_id")
 , CONSTRAINT plan_changes_kind_known CHECK (kind IN ('upgrade', 'downgrade', 'lateral', 'trial_swap')), CONSTRAINT plan_changes_strategy_known CHECK (strategy IN ('immediate', 'at_period_end')), CONSTRAINT plan_changes_status_known CHECK (status IN ('scheduled', 'applied', 'canceled')), CONSTRAINT plan_changes_net_consistent CHECK (net_cents = credit_cents + charge_cents));
 CREATE INDEX "index_plan_changes_on_subscription_id" ON "plan_changes" ("subscription_id");
 CREATE UNIQUE INDEX "index_plan_changes_one_scheduled_per_subscription" ON "plan_changes" ("subscription_id") WHERE status = 'scheduled';
+CREATE TABLE IF NOT EXISTS "refunds" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "invoice_id" integer NOT NULL, "payment_attempt_id" integer, "provider_refund_id" varchar, "amount_cents" integer NOT NULL, "destination" varchar NOT NULL, "reason" varchar NOT NULL, "status" varchar NOT NULL, "failure_reason" varchar, "requested_at" datetime(6) NOT NULL, "completed_at" datetime(6), "last_provider_event_at" datetime(6), "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL, CONSTRAINT "fk_rails_f09a58c78f"
+FOREIGN KEY ("invoice_id")
+  REFERENCES "invoices" ("id")
+, CONSTRAINT "fk_rails_b7b63f0e41"
+FOREIGN KEY ("payment_attempt_id")
+  REFERENCES "payment_attempts" ("id")
+, CONSTRAINT refunds_amount_positive CHECK (amount_cents > 0), CONSTRAINT refunds_destination_known CHECK (destination IN ('original_method', 'credit_balance')), CONSTRAINT refunds_reason_known CHECK (reason IN ('requested_by_customer', 'duplicate', 'fraudulent', 'service_issue')), CONSTRAINT refunds_status_known CHECK (status IN ('pending', 'succeeded', 'failed')));
+CREATE INDEX "index_refunds_on_invoice_id" ON "refunds" ("invoice_id");
+CREATE UNIQUE INDEX "index_refunds_on_provider_refund_id" ON "refunds" ("provider_refund_id");
+CREATE TABLE IF NOT EXISTS "invoices" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "subscription_id" integer NOT NULL, "customer_id" integer NOT NULL, "provider_invoice_id" varchar NOT NULL, "number" varchar NOT NULL, "status" varchar NOT NULL, "billing_reason" varchar NOT NULL, "period_start" datetime(6) NOT NULL, "period_end" datetime(6) NOT NULL, "subtotal_cents" integer NOT NULL, "credit_applied_cents" integer DEFAULT 0 NOT NULL, "total_cents" integer NOT NULL, "amount_paid_cents" integer DEFAULT 0 NOT NULL, "amount_refunded_cents" integer DEFAULT 0 NOT NULL, "amount_due_cents" integer NOT NULL, "currency" varchar DEFAULT 'USD' NOT NULL, "issued_at" datetime(6) NOT NULL, "paid_at" datetime(6), "attempt_count" integer DEFAULT 0 NOT NULL, "last_provider_event_at" datetime(6), "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL, CONSTRAINT "fk_rails_0d349e632f"
+FOREIGN KEY ("customer_id")
+  REFERENCES "customers" ("id")
+, CONSTRAINT "fk_rails_457c900f6e"
+FOREIGN KEY ("subscription_id")
+  REFERENCES "subscriptions" ("id")
+, CONSTRAINT invoices_status_known CHECK (status IN ('open', 'paid', 'void', 'uncollectible')), CONSTRAINT invoices_billing_reason_known CHECK (billing_reason IN ('subscription_create', 'subscription_cycle', 'subscription_update', 'manual')), CONSTRAINT invoices_amounts_non_negative CHECK (subtotal_cents >= 0 AND credit_applied_cents >= 0 AND amount_paid_cents >= 0 AND amount_refunded_cents >= 0 AND amount_due_cents >= 0), CONSTRAINT invoices_total_consistent CHECK (total_cents = subtotal_cents - credit_applied_cents), CONSTRAINT invoices_refunds_within_paid CHECK (amount_refunded_cents <= amount_paid_cents));
+CREATE INDEX "index_invoices_on_subscription_id" ON "invoices" ("subscription_id");
+CREATE INDEX "index_invoices_on_customer_id" ON "invoices" ("customer_id");
+CREATE UNIQUE INDEX "index_invoices_on_provider_invoice_id" ON "invoices" ("provider_invoice_id");
+CREATE UNIQUE INDEX "index_invoices_on_number" ON "invoices" ("number");
+CREATE INDEX "index_invoices_on_status" ON "invoices" ("status");
 INSERT INTO "schema_migrations" (version) VALUES
+('20260924223537'),
+('20260924223535'),
 ('20260924222126'),
 ('20260924220007'),
 ('20260924220005'),

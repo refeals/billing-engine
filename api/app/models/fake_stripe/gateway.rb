@@ -82,6 +82,35 @@ module FakeStripe
           delivery: delivery, copies: copies)
       end
 
+      # Refunds are reported like everything else: refund.updated with the result and, when it
+      # went through, charge.refunded with the charge's cumulative refunded amount.
+      def refund(charge:, amount_cents:, reason:, payment_method:)
+        refund_id = ProviderIds.generate("re")
+        charge_event = MockedWebhookEvent.find_by(event_type: "charge.succeeded", provider_object_id: charge)
+        charged = charge_event&.payload&.dig("data", "object", "amount").to_i
+        already_refunded = Charges.refunded_on(charge)
+        subscription = charge_event&.provider_subscription_id
+
+        failure = if charge_event.nil? then "charge_not_found"
+        # The provider has its own limit: it never gives back more than it took, whatever
+        # the engine asks.
+        elsif already_refunded + amount_cents > charged then "amount_exceeds_charge"
+        elsif payment_method && payment_method[:token] == "pm_card_refundFail" then "refund_failed"
+        end
+
+        Outbox.emit(type: "refund.updated", subscription_id: subscription, object: {
+          id: refund_id, object: "refund", charge: charge, amount: amount_cents, reason: reason,
+          status: failure ? "failed" : "succeeded", failure_reason: failure
+        })
+        unless failure
+          Outbox.emit(type: "charge.refunded", subscription_id: subscription, object: {
+            id: charge, object: "charge", amount: charged, amount_refunded: already_refunded + amount_cents,
+            refunded: already_refunded + amount_cents == charged
+          })
+        end
+        refund_id
+      end
+
       private
 
       def emit_invoice_event(type, invoice, subscription, customer, **fields)

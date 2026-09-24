@@ -36,7 +36,10 @@ class InvoiceSerializer
           period_start: line.period_start&.iso8601, period_end: line.period_end&.iso8601
         )
       end,
-      payment_attempts: invoice.payment_attempts.includes(:payment_method).map { |attempt| PaymentAttemptSerializer.new(attempt).as_json }
+      payment_attempts: invoice.payment_attempts.includes(:payment_method).map { |attempt| PaymentAttemptSerializer.new(attempt).as_json },
+      refunds: invoice.refunds.newest_first.map { |refund| RefundSerializer.new(refund).as_json },
+      # Detail only: it costs a query per invoice, and lists don't show it.
+      refundable_cents: invoice.refundable_cents
     )
   end
 end

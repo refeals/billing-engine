@@ -25,7 +25,10 @@ Rails.application.routes.draw do
       end
 
       resources :invoices, only: %i[index show] do
-        post :retry_payment, on: :member
+        member do
+          post :retry_payment
+          post :refunds, action: :refund
+        end
       end
 
       resources :customers, only: %i[index show create] do
