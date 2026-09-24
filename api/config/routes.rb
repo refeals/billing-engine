@@ -27,6 +27,11 @@ Rails.application.routes.draw do
         resources :credit_ledger_entries, only: %i[index create]
       end
 
+      post "webhooks/stripe", to: "webhooks#stripe"
+      resources :webhook_events, only: %i[index show] do
+        post :reprocess, on: :member
+      end
+
       if Rails.configuration.x.simulator_enabled
         namespace :simulator do
           resource :clock, only: :show do

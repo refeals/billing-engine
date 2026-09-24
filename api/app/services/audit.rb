@@ -21,6 +21,7 @@ module Audit
       subject: subject,
       subscription_id: references[:subscription_id],
       customer_id: references[:customer_id],
+      webhook_event_id: Current.webhook_event&.id,
       data: { before: before, after: after, context: context }.compact_blank,
       occurred_at: BillingClock.now
     )

@@ -77,7 +77,13 @@ BEGIN
 END;
 CREATE TABLE IF NOT EXISTS "idempotency_keys" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "key" varchar NOT NULL, "request_fingerprint" varchar NOT NULL, "response_status" integer, "response_body" text, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL);
 CREATE UNIQUE INDEX "index_idempotency_keys_on_key" ON "idempotency_keys" ("key");
+CREATE TABLE IF NOT EXISTS "webhook_events" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "provider_event_id" varchar NOT NULL, "event_type" varchar NOT NULL, "provider_object_id" varchar NOT NULL, "payload" json NOT NULL, "provider_created_at" datetime(6) NOT NULL, "received_at" datetime(6) NOT NULL, "processing_status" varchar DEFAULT 'received' NOT NULL, "processed_at" datetime(6), "attempts" integer DEFAULT 0 NOT NULL, "last_error" text, "duplicate_deliveries_count" integer DEFAULT 0 NOT NULL, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL, CONSTRAINT webhook_events_processing_status_known CHECK (processing_status IN ('received', 'processed', 'failed', 'skipped_stale', 'ignored_unhandled')));
+CREATE UNIQUE INDEX "index_webhook_events_on_provider_event_id" ON "webhook_events" ("provider_event_id");
+CREATE INDEX "index_webhook_events_on_provider_object_id" ON "webhook_events" ("provider_object_id");
+CREATE INDEX "index_webhook_events_on_processing_status" ON "webhook_events" ("processing_status");
+CREATE INDEX "index_webhook_events_on_event_type" ON "webhook_events" ("event_type");
 INSERT INTO "schema_migrations" (version) VALUES
+('20260924195002'),
 ('20260924193755'),
 ('20260924193753'),
 ('20260924193751'),

@@ -29,7 +29,8 @@ module Subscriptions
         )
         @subscription.state_transitions.create!(
           from_status: from, to_status: @to, reason: @reason, actor_type: event.actor_type,
-          billing_event: event, metadata: @metadata, occurred_at: event.occurred_at
+          webhook_event_id: event.webhook_event_id, billing_event: event, metadata: @metadata,
+          occurred_at: event.occurred_at
         )
         @subscription
       end
