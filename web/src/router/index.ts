@@ -28,6 +28,18 @@ const router = createRouter({
       meta: { title: 'Subscription history' },
     },
     {
+      path: '/invoices',
+      name: 'invoices',
+      component: () => import('@/features/invoices/InvoicesView.vue'),
+      meta: { title: 'Invoices' },
+    },
+    {
+      path: '/invoices/:id',
+      name: 'invoice',
+      component: () => import('@/features/invoices/InvoiceDetailView.vue'),
+      meta: { title: 'Invoice' },
+    },
+    {
       path: '/plans',
       name: 'plans',
       component: () => import('@/features/plans/PlansView.vue'),

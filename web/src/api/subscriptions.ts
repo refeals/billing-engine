@@ -33,6 +33,15 @@ export interface Subscription {
   access_suspended: boolean
   lock_version: number
   allowed_actions: SubscriptionAction[]
+  default_payment_method: {
+    id: number
+    brand: string
+    last4: string
+    exp_month: number
+    exp_year: number
+    expired: boolean
+    behavior: string
+  } | null
   created_at: string
 }
 

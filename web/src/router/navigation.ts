@@ -23,7 +23,7 @@ export const navigation: NavigationGroup[] = [
       { label: 'Subscriptions', to: '/subscriptions', plan: '04', enabled: true },
       { label: 'Customers', to: '/customers', plan: '03', enabled: true },
       { label: 'Plans', to: '/plans', plan: '03', enabled: true },
-      { label: 'Invoices', to: '/invoices', plan: '07', enabled: false },
+      { label: 'Invoices', to: '/invoices', plan: '07', enabled: true },
     ],
   },
   {

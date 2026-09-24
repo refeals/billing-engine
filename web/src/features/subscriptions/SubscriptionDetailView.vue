@@ -5,14 +5,17 @@ import { useRoute } from 'vue-router'
 import type { ApiError } from '@/api/client'
 import { toApiError } from '@/api/errors'
 import { keyAfterFailure, newIdempotencyKey } from '@/api/idempotency'
+import { fetchInvoices } from '@/api/invoices'
 import {
   fetchStateTransitions,
   fetchSubscription,
   runSubscriptionAction,
 } from '@/api/subscriptions'
+import BaseBadge from '@/components/BaseBadge.vue'
 import BaseButton from '@/components/BaseButton.vue'
 import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import StatusBadge from '@/components/StatusBadge.vue'
+import InvoiceStatusBadge from '@/features/invoices/InvoiceStatusBadge.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
 import { useClockRefresh } from '@/composables/useClockRefresh'
 import { useClockStore } from '@/stores/clock'
@@ -29,12 +32,14 @@ const subscriptionId = computed(() => String(route.params.id))
 
 const subscriptionData = useAsyncData(() => fetchSubscription(subscriptionId.value))
 const transitionsData = useAsyncData(() => fetchStateTransitions(subscriptionId.value))
+const invoicesData = useAsyncData(() => fetchInvoices({ subscription_id: subscriptionId.value }))
 const subscription = computed(() => subscriptionData.data.value)
 const actions = computed(() => new Set(subscription.value?.allowed_actions ?? []))
 
 function reloadAll() {
   subscriptionData.reload()
   transitionsData.reload()
+  invoicesData.reload()
 }
 
 useClockRefresh(reloadAll)
@@ -88,6 +93,7 @@ async function run(
     )
     dialog.value = null
     transitionsData.reload()
+    invoicesData.reload()
   } catch (caught) {
     actionError.value = toApiError(caught)
     idempotencyKey = keyAfterFailure(idempotencyKey, actionError.value)
@@ -224,6 +230,77 @@ const tomorrow = computed(() => {
           </div>
         </dl>
       </header>
+
+      <div class="grid gap-6 lg:grid-cols-3">
+        <section class="rounded-lg border border-border bg-surface lg:col-span-2">
+          <h3 class="border-b border-border px-5 py-3 text-sm font-semibold">Invoices</h3>
+          <table v-if="(invoicesData.data.value?.data.length ?? 0) > 0" class="w-full text-sm">
+            <tbody>
+              <tr
+                v-for="invoice in invoicesData.data.value?.data ?? []"
+                :key="invoice.id"
+                class="border-b border-border last:border-b-0"
+              >
+                <td class="px-5 py-2">
+                  <RouterLink
+                    :to="{ name: 'invoice', params: { id: invoice.id } }"
+                    class="font-mono hover:text-accent"
+                  >
+                    {{ invoice.number }}
+                  </RouterLink>
+                </td>
+                <td class="px-5 py-2 text-ink-muted">
+                  {{ formatDate(invoice.period_start) }} – {{ formatDate(invoice.period_end) }}
+                </td>
+                <td class="px-5 py-2 text-right tabular-nums">
+                  {{ formatMoney(invoice.total_cents) }}
+                </td>
+                <td class="px-5 py-2 text-right">
+                  <InvoiceStatusBadge :status="invoice.status" />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+          <p v-else class="px-5 py-4 text-sm text-ink-muted">
+            {{
+              subscription.status === 'trialing'
+                ? 'No invoices yet: the first one is issued when the trial ends.'
+                : 'No invoices yet.'
+            }}
+          </p>
+        </section>
+
+        <section class="rounded-lg border border-border bg-surface p-5">
+          <h3 class="text-sm font-semibold">Card charged at renewal</h3>
+          <template v-if="subscription.default_payment_method">
+            <p class="mt-2 text-sm">
+              {{ humanize(subscription.default_payment_method.brand) }} ····
+              {{ subscription.default_payment_method.last4 }}
+            </p>
+            <p class="text-xs text-ink-muted">
+              Expires
+              {{ String(subscription.default_payment_method.exp_month).padStart(2, '0') }}/{{
+                subscription.default_payment_method.exp_year
+              }}
+              · {{ humanize(subscription.default_payment_method.behavior) }}
+            </p>
+            <BaseBadge
+              v-if="subscription.default_payment_method.expired"
+              tone="danger"
+              class="mt-2"
+            >
+              Expired
+            </BaseBadge>
+          </template>
+          <p v-else class="mt-2 text-sm text-danger">No card on file: the next charge will fail.</p>
+          <RouterLink
+            :to="{ name: 'customer', params: { id: subscription.customer.id } }"
+            class="mt-3 inline-block text-sm text-accent hover:text-accent-strong"
+          >
+            Manage cards →
+          </RouterLink>
+        </section>
+      </div>
 
       <section class="rounded-lg border border-border bg-surface">
         <div class="flex items-center justify-between border-b border-border px-5 py-3">
