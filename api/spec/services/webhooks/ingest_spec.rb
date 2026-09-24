@@ -23,7 +23,7 @@ RSpec.describe Webhooks::Ingest do
     # Two deliveries can both claim the row before either finishes; the lock + re-read in
     # ProcessEvent lets only one of them apply the event.
     it "applies the event once when two deliveries race past the claim" do
-      ingest(stripe_event(type: "invoice.paid", object: { id: "in_1" }, id: "evt_race"))
+      ingest(stripe_event(type: "invoice.finalized", object: { id: "in_1" }, id: "evt_race"))
       row = WebhookEvent.sole
       row.update_columns(processing_status: "received", processed_at: nil)
       stale_copy = WebhookEvent.find(row.id)
@@ -128,7 +128,7 @@ RSpec.describe Webhooks::Ingest do
   end
 
   it "acknowledges event types it has no handler for" do
-    result = ingest(stripe_event(type: "invoice.paid", object: { id: "in_1" }))
+    result = ingest(stripe_event(type: "invoice.finalized", object: { id: "in_1" }))
 
     expect(result.status).to eq(:ignored_unhandled)
     expect(WebhookEvent.sole.processing_status).to eq("ignored_unhandled")
@@ -142,7 +142,7 @@ RSpec.describe Webhooks::Ingest do
     it "fails closed when the simulator is off, since nothing verifies signatures yet" do
       allow(Rails.configuration.x).to receive(:simulator_enabled).and_return(false)
 
-      expect { ingest(stripe_event(type: "invoice.paid", object: { id: "in_1" })) }
+      expect { ingest(stripe_event(type: "invoice.finalized", object: { id: "in_1" })) }
         .to raise_error(Webhooks::InvalidSignature)
       expect(WebhookEvent.count).to eq(0)
     end
@@ -170,7 +170,7 @@ RSpec.describe Webhooks::Ingest do
     end
 
     it "rejects a non-numeric created timestamp" do
-      event = stripe_event(type: "invoice.paid", object: { id: "in_1" }).merge(created: "yesterday")
+      event = stripe_event(type: "invoice.finalized", object: { id: "in_1" }).merge(created: "yesterday")
 
       expect { ingest(event) }.to raise_error(Webhooks::InvalidPayload, /Unix timestamp/)
       expect(WebhookEvent.count).to eq(0)

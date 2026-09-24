@@ -20,6 +20,14 @@ module Subscriptions
           snapshot: subscription.provider_snapshot.merge(status: initial_status)
         )
         Transition.call(subscription, to: initial_status, reason: "subscription_created")
+        # Without a trial the first period is billed right away. The subscription is active
+        # meanwhile; if the payment fails, the webhook moves it to past_due (there is no
+        # separate "incomplete" state).
+        unless trial?
+          Invoices::Issue.call(subscription: subscription, billing_reason: "subscription_create",
+            period_start: subscription.current_period_start, period_end: subscription.current_period_end)
+        end
+        subscription
       end
     rescue ActiveRecord::RecordNotUnique
       # The partial unique index caught a concurrent create the check above couldn't see.
@@ -47,8 +55,7 @@ module Subscriptions
     end
 
     # During a trial the current period is the trial itself, as in Stripe. Without a trial
-    # the first paid period starts now. Until plan 07 adds invoicing, that first period is
-    # not charged.
+    # the first paid period starts now.
     def base_attributes
       period_end = trial? ? now + @plan.trial_days.days : PlanPeriod.advance(now, @plan)
 

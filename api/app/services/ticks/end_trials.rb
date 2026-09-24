@@ -1,17 +1,17 @@
 module Ticks
-  # PROVISIONAL until plan 07: converts a finished trial to active without charging. Plan 07
-  # replaces this with an invoice, and the conversion then waits for the payment webhook.
+  # A trial that ends is billed for its first paid period. The subscription stays trialing
+  # until the provider reports the payment: invoice.paid turns it active, a failure makes it
+  # past_due. The period moves on right away, like Stripe's, so the trial is never billed
+  # twice.
   class EndTrials
     def self.call(at:)
-      due = Subscription.with_status("trialing").where(cancel_at_period_end: false).where(trial_ends_at: ..at)
+      due = Subscription.with_status("trialing").where(cancel_at_period_end: false).where(current_period_end: ..at)
 
-      converted = due.includes(:plan).find_each.count do |subscription|
-        period_start = subscription.trial_ends_at
-        Subscriptions::Transition.call(subscription, to: "active", reason: "trial_converted",
-          attributes: { current_period_start: period_start, current_period_end: PlanPeriod.advance(period_start, subscription.plan) })
+      invoiced = due.includes(:plan, :customer).find_each.count do |subscription|
+        Ticks::Renew.bill_next_period(subscription)
       end
 
-      { trials_converted: converted }
+      { trial_invoices_issued: invoiced }
     end
   end
 end

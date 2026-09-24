@@ -31,6 +31,49 @@ module FakeStripe
         nil
       end
 
+      def create_invoice(snapshot:)
+        id = ProviderIds.generate("in")
+        Outbox.emit(type: "invoice.finalized", subscription_id: snapshot[:subscription], object: {
+          id: id, object: "invoice", status: "open", customer: snapshot[:customer],
+          subscription: snapshot[:subscription], number: snapshot[:number],
+          total: snapshot[:total_cents], amount_due: snapshot[:amount_due_cents], currency: "usd"
+        })
+        id
+      end
+
+      # Tries to collect an invoice. Nothing is returned: like Stripe, the outcome is only
+      # reported through events (charge.* then invoice.paid / invoice.payment_failed).
+      def pay_invoice(invoice:, subscription:, customer:, amount_cents:, payment_method:)
+        # Nothing to collect (e.g. fully covered by credit): paid without a charge.
+        if amount_cents.zero?
+          emit_invoice_event("invoice.paid", invoice, subscription, customer,
+            status: "paid", amount_paid: 0, amount_due: 0, charge: nil, attempt_count: 0)
+          return nil
+        end
+
+        failure = Charges.failure_code(payment_method, at: BillingClock.now)
+        attempt_count = Charges.attempts_for(invoice) + 1
+        charge_id = ProviderIds.generate("ch")
+
+        Outbox.emit(type: failure ? "charge.failed" : "charge.succeeded", subscription_id: subscription, object: {
+          id: charge_id, object: "charge", invoice: invoice, customer: customer,
+          payment_method: payment_method&.fetch(:id), amount: amount_cents,
+          status: failure ? "failed" : "succeeded", failure_code: failure
+        })
+
+        if failure
+          emit_invoice_event("invoice.payment_failed", invoice, subscription, customer,
+            status: "open", amount_paid: 0, amount_due: amount_cents, charge: charge_id,
+            payment_method: payment_method&.fetch(:id), attempt_count: attempt_count,
+            last_payment_error: { code: failure })
+        else
+          emit_invoice_event("invoice.paid", invoice, subscription, customer,
+            status: "paid", amount_paid: amount_cents, amount_due: 0, charge: charge_id,
+            payment_method: payment_method&.fetch(:id), attempt_count: attempt_count)
+        end
+        nil
+      end
+
       # Also used by the simulator to make the provider report something (possibly
       # disagreeing with the engine, or never delivered).
       def emit_subscription_event(id, snapshot:, type: nil, delivery: "deliver", copies: 1)
@@ -40,6 +83,12 @@ module FakeStripe
       end
 
       private
+
+      def emit_invoice_event(type, invoice, subscription, customer, **fields)
+        Outbox.emit(type: type, subscription_id: subscription, object: {
+          id: invoice, object: "invoice", subscription: subscription, customer: customer, currency: "usd", **fields
+        })
+      end
 
       # Stripe represents times as Unix timestamps.
       def subscription_object(id, snapshot)

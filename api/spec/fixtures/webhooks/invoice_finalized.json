@@ -1,7 +1,7 @@
 {
-  "id": "evt_demo_invoice_paid_0001",
+  "id": "evt_demo_invoice_finalized_0001",
   "object": "event",
-  "type": "invoice.paid",
+  "type": "invoice.finalized",
   "api_version": "2024-06-20",
   "created": 1790899200,
   "data": {
@@ -9,8 +9,8 @@
       "id": "in_demo_0001",
       "object": "invoice",
       "subscription": "sub_demo_0001",
-      "status": "paid",
-      "amount_paid": 4900,
+      "status": "open",
+      "amount_due": 4900,
       "currency": "usd"
     }
   }

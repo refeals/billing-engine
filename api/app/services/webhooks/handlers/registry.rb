@@ -6,7 +6,11 @@ module Webhooks
       HANDLERS = {
         "customer.subscription.created" => SubscriptionObserved,
         "customer.subscription.updated" => SubscriptionObserved,
-        "customer.subscription.deleted" => SubscriptionObserved
+        "customer.subscription.deleted" => SubscriptionObserved,
+        "charge.succeeded" => ChargeRecorded,
+        "charge.failed" => ChargeRecorded,
+        "invoice.paid" => InvoicePaid,
+        "invoice.payment_failed" => InvoicePaymentFailed
       }.freeze
 
       def self.for(event_type)

@@ -1,6 +1,7 @@
 class Customer < ApplicationRecord
   has_many :payment_methods, -> { order(:id) }, dependent: :restrict_with_exception
   has_many :credit_ledger_entries, dependent: :restrict_with_exception
+  has_many :invoices, dependent: :restrict_with_exception
   has_many :subscriptions, -> { order(id: :desc) }, dependent: :restrict_with_exception
 
   # Stored normalized, so uniqueness is case-insensitive without relying on collation.

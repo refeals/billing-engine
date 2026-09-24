@@ -24,6 +24,10 @@ module Webhooks
         webhook_event.provider_created_at
       end
 
+      def find_invoice!(provider_invoice_id)
+        Invoice.find_by(provider_invoice_id: provider_invoice_id) || raise(UnknownObject, "No invoice #{provider_invoice_id}")
+      end
+
       # Providers don't guarantee delivery order. Each record remembers the newest event
       # applied to it, and anything older is skipped. The check is per record: an old event
       # about invoice A is still valid after a newer one about invoice B. Equal timestamps

@@ -20,6 +20,10 @@ Rails.application.routes.draw do
         end
       end
 
+      resources :invoices, only: %i[index show] do
+        post :retry_payment, on: :member
+      end
+
       resources :customers, only: %i[index show create] do
         resources :payment_methods, only: :create do
           post :make_default, on: :member

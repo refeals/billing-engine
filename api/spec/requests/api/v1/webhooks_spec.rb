@@ -51,7 +51,7 @@ RSpec.describe "Webhooks", type: :request do
     end
 
     it "accepts the demo fixture used in the README" do
-      deliver(JSON.parse(Rails.root.join("spec/fixtures/webhooks/invoice_paid.json").read))
+      deliver(JSON.parse(Rails.root.join("spec/fixtures/webhooks/invoice_finalized.json").read))
 
       expect(json["status"]).to eq("ignored_unhandled")
     end
@@ -60,7 +60,7 @@ RSpec.describe "Webhooks", type: :request do
   describe "inbox" do
     it "lists events newest first and filters by status" do
       deliver(subscription_event(subscription))
-      deliver(stripe_event(type: "invoice.paid", object: { id: "in_1" }))
+      deliver(stripe_event(type: "invoice.finalized", object: { id: "in_1" }))
 
       get "/api/v1/webhook_events"
       expect(json["data"].map { |row| row["processing_status"] }).to eq(%w[ignored_unhandled processed])

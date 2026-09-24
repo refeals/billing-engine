@@ -3,6 +3,7 @@ class Subscription < ApplicationRecord
 
   belongs_to :customer
   belongs_to :plan
+  has_many :invoices, dependent: :restrict_with_exception
   has_many :state_transitions, -> { order(:occurred_at, :id) }, class_name: "SubscriptionStateTransition",
     dependent: :restrict_with_exception
 

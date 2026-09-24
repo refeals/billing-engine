@@ -77,7 +77,7 @@ RSpec.describe FakeStripe::Dispatcher do
 
       report = BillingClock.advance!(days: 1)[:tick_report]
 
-      expect(report[:provider_deliveries_pending]).to eq(1)
+      expect(report[:provider_deliveries_retried]).to eq(1)
       expect(event.reload.delivery_status).to eq("delivered")
     end
 

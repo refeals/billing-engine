@@ -23,7 +23,7 @@ RSpec.describe "Simulator clock", type: :request do
 
     expect(response).to have_http_status(:ok)
     expect(json).to include("now" => "2026-10-04T12:00:00Z", "ticks_run" => 3)
-    expect(json["tick_report"]).to include("subscriptions_canceled" => 0, "trials_converted" => 0, "periods_renewed" => 0)
+    expect(json["tick_report"]).to include("subscriptions_canceled" => 0, "trial_invoices_issued" => 0, "renewal_invoices_issued" => 0)
   end
 
   it "rejects an invalid number of days with the standard error shape" do

@@ -8,8 +8,7 @@ module Ticks
       Ticks::CancelAtPeriodEnd,
       Ticks::EndTrials,
       Ticks::ResumePaused,
-      # A subscription resumed today with an old period gets current dates.
-      Ticks::RenewPeriods,
+      Ticks::Renew,
       # Last: retries go out after everything above has been applied.
       Ticks::RetryProviderDeliveries
     ].freeze

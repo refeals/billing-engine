@@ -22,7 +22,15 @@ class SubscriptionSerializer
       access_suspended: subscription.access_suspended_at.present?,
       lock_version: subscription.lock_version,
       allowed_actions: subscription.allowed_actions,
+      default_payment_method: default_payment_method,
       created_at: subscription.created_at.iso8601
     }
+  end
+
+  private
+
+  def default_payment_method
+    card = @subscription.customer.default_payment_method
+    card && PaymentMethodSerializer.new(card).as_json.slice(:id, :brand, :last4, :exp_month, :exp_year, :expired, :behavior)
   end
 end

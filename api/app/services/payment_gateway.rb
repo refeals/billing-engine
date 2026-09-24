@@ -6,11 +6,13 @@
 #   attach_payment_method(customer:, token:, exp_month:, exp_year:) → { id:, brand:, last4: }
 #   create_subscription(snapshot:)                               → "sub_…"
 #   update_subscription(id, snapshot:)                           → nil
+#   create_invoice(snapshot:)                                    → "in_…"
+#   pay_invoice(invoice:, subscription:, customer:, amount_cents:, payment_method:) → nil
 #
 # Return values are identifiers and card details only. Outcomes (a charge succeeded, a
 # subscription changed at the provider) always come back later as webhooks, so the engine
-# can't rely on a shortcut the real provider doesn't offer. Invoice and refund calls are
-# added with the features that use them (plans 07 and 09).
+# can't rely on a shortcut the real provider doesn't offer. Refund calls are added with the
+# feature that uses them (plan 09).
 module PaymentGateway
   def self.current
     FakeStripe::Gateway
