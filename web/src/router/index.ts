@@ -46,6 +46,18 @@ const router = createRouter({
       meta: { title: 'Customer' },
     },
     {
+      path: '/webhooks',
+      name: 'webhooks',
+      component: () => import('@/features/webhooks/WebhookInboxView.vue'),
+      meta: { title: 'Webhook inbox' },
+    },
+    {
+      path: '/webhooks/:id',
+      name: 'webhook-event',
+      component: () => import('@/features/webhooks/WebhookEventDetailView.vue'),
+      meta: { title: 'Webhook event' },
+    },
+    {
       path: '/audit',
       name: 'audit-log',
       component: () => import('@/features/audit/AuditLogView.vue'),

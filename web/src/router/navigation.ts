@@ -31,14 +31,12 @@ export const navigation: NavigationGroup[] = [
     items: [
       { label: 'Dunning', to: '/dunning', plan: '10', enabled: false },
       { label: 'Reconciliation', to: '/reconciliation', plan: '11', enabled: false },
+      { label: 'Webhook inbox', to: '/webhooks', plan: '05', enabled: true },
       { label: 'Audit log', to: '/audit', plan: '02', enabled: true },
     ],
   },
   {
     label: 'Simulator',
-    items: [
-      { label: 'Webhook inbox', to: '/webhooks', plan: '05', enabled: false },
-      { label: 'Scenario Lab', to: '/simulator', plan: '06', enabled: false },
-    ],
+    items: [{ label: 'Scenario Lab', to: '/simulator', plan: '06', enabled: false }],
   },
 ]

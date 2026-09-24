@@ -41,7 +41,14 @@ const subjectLabel = computed(() => {
       <span class="ml-auto text-xs text-ink-faint">{{ expanded ? 'Hide' : 'Details' }}</span>
     </button>
 
-    <div v-if="expanded" class="px-4 pb-4">
+    <div v-if="expanded" class="space-y-3 px-4 pb-4">
+      <RouterLink
+        v-if="event.webhook_event_id"
+        :to="{ name: 'webhook-event', params: { id: event.webhook_event_id } }"
+        class="inline-block text-xs text-accent hover:text-accent-strong"
+      >
+        Caused by webhook event #{{ event.webhook_event_id }} →
+      </RouterLink>
       <JsonDiff
         :before="event.data.before"
         :after="event.data.after"
