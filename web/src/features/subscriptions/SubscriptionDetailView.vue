@@ -2,10 +2,11 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
-import type { ApiError } from '@/api/client'
+import { ApiError } from '@/api/client'
 import { toApiError } from '@/api/errors'
 import { keyAfterFailure, newIdempotencyKey } from '@/api/idempotency'
 import { fetchInvoices } from '@/api/invoices'
+import { cancelScheduledPlanChange, fetchPlanChanges } from '@/api/planChanges'
 import {
   fetchStateTransitions,
   fetchSubscription,
@@ -22,6 +23,7 @@ import { useClockStore } from '@/stores/clock'
 import { formatDate, formatDateTime, formatMoney } from '@/utils/format'
 import { humanize } from '@/utils/text'
 import CancelSubscriptionDialog from './CancelSubscriptionDialog.vue'
+import ChangePlanDialog from './ChangePlanDialog.vue'
 import PauseSubscriptionDialog from './PauseSubscriptionDialog.vue'
 
 type DialogName = 'cancel' | 'pause' | 'resume' | 'undo_cancel'
@@ -33,6 +35,7 @@ const subscriptionId = computed(() => String(route.params.id))
 const subscriptionData = useAsyncData(() => fetchSubscription(subscriptionId.value))
 const transitionsData = useAsyncData(() => fetchStateTransitions(subscriptionId.value))
 const invoicesData = useAsyncData(() => fetchInvoices({ subscription_id: subscriptionId.value }))
+const planChangesData = useAsyncData(() => fetchPlanChanges(subscriptionId.value))
 const subscription = computed(() => subscriptionData.data.value)
 const actions = computed(() => new Set(subscription.value?.allowed_actions ?? []))
 
@@ -40,6 +43,7 @@ function reloadAll() {
   subscriptionData.reload()
   transitionsData.reload()
   invoicesData.reload()
+  planChangesData.reload()
 }
 
 useClockRefresh(reloadAll)
@@ -110,6 +114,31 @@ function reloadAfterConflict() {
 
 // The API needs a resume date strictly after now, and dates mean the start of the day
 // (UTC), so the earliest valid choice is tomorrow in simulated time.
+const changingPlan = ref(false)
+const planChangeError = ref<string | null>(null)
+
+function onPlanChanged() {
+  reloadAll()
+}
+
+// A conflict means the subscription moved on (renewed, changed elsewhere): show the latest
+// state and say nothing was applied, the same way the other actions do.
+function onPlanChangeConflict() {
+  actionError.value = new ApiError(409, 'stale', 'Changed elsewhere')
+}
+
+async function cancelScheduledChange() {
+  const scheduled = subscription.value?.scheduled_plan_change
+  if (!subscription.value || !scheduled) return
+  planChangeError.value = null
+  try {
+    await cancelScheduledPlanChange(subscription.value.id, scheduled.id)
+    reloadAll()
+  } catch (caught) {
+    planChangeError.value = toApiError(caught).message
+  }
+}
+
 const tomorrow = computed(() => {
   const base = clock.now ? new Date(clock.now) : new Date()
   base.setUTCDate(base.getUTCDate() + 1)
@@ -173,6 +202,9 @@ const tomorrow = computed(() => {
             >
               Keep subscription
             </BaseButton>
+            <BaseButton v-if="actions.has('change_plan')" @click="changingPlan = true">
+              Change plan
+            </BaseButton>
             <BaseButton v-if="actions.has('pause')" @click="openDialog('pause')">Pause</BaseButton>
             <BaseButton
               v-if="actions.has('cancel_now')"
@@ -184,6 +216,19 @@ const tomorrow = computed(() => {
           </div>
         </div>
 
+        <div
+          v-if="subscription.scheduled_plan_change"
+          class="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-md bg-accent/5 px-3 py-2 text-sm"
+        >
+          <span>
+            Switches to <strong>{{ subscription.scheduled_plan_change.to_plan.name }}</strong> on
+            {{ formatDate(subscription.scheduled_plan_change.effective_at) }}.
+          </span>
+          <BaseButton variant="ghost" @click="cancelScheduledChange">Keep current plan</BaseButton>
+          <p v-if="planChangeError" class="w-full text-danger" role="alert">
+            {{ planChangeError }}
+          </p>
+        </div>
         <p
           v-if="subscription.cancel_at_period_end"
           class="mt-4 rounded-md bg-status-canceled/5 px-3 py-2 text-sm text-status-canceled"
@@ -302,6 +347,51 @@ const tomorrow = computed(() => {
         </section>
       </div>
 
+      <section
+        v-if="(planChangesData.data.value?.data.length ?? 0) > 0"
+        class="rounded-lg border border-border bg-surface"
+      >
+        <h3 class="border-b border-border px-5 py-3 text-sm font-semibold">Plan changes</h3>
+        <table class="w-full text-sm">
+          <tbody>
+            <tr
+              v-for="change in planChangesData.data.value?.data ?? []"
+              :key="change.id"
+              class="border-b border-border last:border-b-0"
+            >
+              <td class="px-5 py-2 text-ink-muted">{{ formatDate(change.effective_at) }}</td>
+              <td class="px-5 py-2">{{ change.from_plan.name }} → {{ change.to_plan.name }}</td>
+              <td class="px-5 py-2 text-ink-muted">{{ humanize(change.kind) }}</td>
+              <td class="px-5 py-2 text-right tabular-nums">
+                <RouterLink
+                  v-if="change.invoice_id"
+                  :to="{ name: 'invoice', params: { id: change.invoice_id } }"
+                  class="text-accent hover:text-accent-strong"
+                >
+                  {{ formatMoney(change.net_cents) }}
+                </RouterLink>
+                <span v-else>{{
+                  change.net_cents === 0 ? '—' : formatMoney(change.net_cents)
+                }}</span>
+              </td>
+              <td class="px-5 py-2 text-right">
+                <BaseBadge
+                  :tone="
+                    change.status === 'applied'
+                      ? 'success'
+                      : change.status === 'scheduled'
+                        ? 'accent'
+                        : 'neutral'
+                  "
+                >
+                  {{ humanize(change.status) }}
+                </BaseBadge>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
       <section class="rounded-lg border border-border bg-surface">
         <div class="flex items-center justify-between border-b border-border px-5 py-3">
           <h3 class="text-sm font-semibold">Status history</h3>
@@ -341,6 +431,12 @@ const tomorrow = computed(() => {
         </table>
       </section>
 
+      <ChangePlanDialog
+        v-model:open="changingPlan"
+        :subscription="subscription"
+        @changed="onPlanChanged"
+        @conflict="onPlanChangeConflict"
+      />
       <CancelSubscriptionDialog
         v-model:open="cancelOpen"
         :subscription="subscription"

@@ -1,5 +1,6 @@
 import { apiRequest } from './client'
 import { idempotencyHeaders } from './idempotency'
+import type { PlanChange } from './planChanges'
 import type { Plan } from './plans'
 import { toQueryString } from './query'
 import type { Paginated } from './types'
@@ -14,7 +15,7 @@ export const SUBSCRIPTION_STATUSES = [
 export type SubscriptionStatus = (typeof SUBSCRIPTION_STATUSES)[number]
 
 export type SubscriptionAction =
-  'cancel_now' | 'cancel_at_period_end' | 'undo_cancel' | 'pause' | 'resume'
+  'cancel_now' | 'cancel_at_period_end' | 'undo_cancel' | 'pause' | 'resume' | 'change_plan'
 
 export interface Subscription {
   id: number
@@ -42,6 +43,7 @@ export interface Subscription {
     expired: boolean
     behavior: string
   } | null
+  scheduled_plan_change: PlanChange | null
   created_at: string
 }
 
