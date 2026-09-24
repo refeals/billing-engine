@@ -4,6 +4,7 @@ class Subscription < ApplicationRecord
   belongs_to :customer
   belongs_to :plan
   has_many :invoices, dependent: :restrict_with_exception
+  has_many :plan_changes, dependent: :restrict_with_exception
   has_many :state_transitions, -> { order(:occurred_at, :id) }, class_name: "SubscriptionStateTransition",
     dependent: :restrict_with_exception
 
@@ -60,8 +61,8 @@ class Subscription < ApplicationRecord
   # frontend only renders buttons for these, so both always agree.
   def allowed_actions
     case status
-    when "trialing" then cancellation_actions
-    when "active" then cancellation_actions + (cancel_at_period_end? ? [] : %w[pause])
+    when "trialing" then cancellation_actions + plan_change_actions
+    when "active" then cancellation_actions + (cancel_at_period_end? ? [] : %w[pause change_plan])
     when "past_due" then %w[cancel_now]
     when "paused" then %w[resume cancel_now]
     else []
@@ -85,6 +86,12 @@ class Subscription < ApplicationRecord
       Audit.record(event_type: "provider.sync_failed", subject: self, actor: Current.actor || "system_job",
         context: { error: error.class.name, message: error.message.truncate(500), status: status })
     end
+  end
+
+  # Changing plans on a subscription that is about to end would be meaningless; the operator
+  # undoes the cancellation first.
+  def plan_change_actions
+    cancel_at_period_end? ? [] : %w[change_plan]
   end
 
   def cancellation_actions

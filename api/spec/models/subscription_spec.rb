@@ -30,11 +30,11 @@ RSpec.describe Subscription do
 
   describe "#allowed_actions" do
     it "offers cancellation and scheduling during a trial" do
-      expect(build(:subscription, :trialing).allowed_actions).to eq(%w[cancel_now cancel_at_period_end])
+      expect(build(:subscription, :trialing).allowed_actions).to eq(%w[cancel_now cancel_at_period_end change_plan])
     end
 
     it "offers pause only while no cancellation is scheduled" do
-      expect(build(:subscription).allowed_actions).to eq(%w[cancel_now cancel_at_period_end pause])
+      expect(build(:subscription).allowed_actions).to eq(%w[cancel_now cancel_at_period_end pause change_plan])
       expect(build(:subscription, cancel_at_period_end: true).allowed_actions).to eq(%w[cancel_now undo_cancel])
     end
 

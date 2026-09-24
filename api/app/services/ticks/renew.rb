@@ -12,6 +12,12 @@ module Ticks
     end
 
     def self.bill_next_period(subscription)
+      # A change scheduled "at period end" takes effect now, so the new period is billed at
+      # the new plan's price.
+      scheduled = subscription.plan_changes.scheduled.to_a
+      scheduled.each { |plan_change| PlanChanges::ApplyScheduled.call(plan_change) }
+      subscription.reload if scheduled.any?
+
       period_start = subscription.current_period_end
       period_end = PlanPeriod.advance(period_start, subscription.plan)
 

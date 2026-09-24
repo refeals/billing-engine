@@ -18,6 +18,10 @@ Rails.application.routes.draw do
           post :resume
           get :state_transitions
         end
+        post :plan_change_preview, to: "plan_changes#preview"
+        resources :plan_changes, only: %i[index create] do
+          post :cancel, on: :member
+        end
       end
 
       resources :invoices, only: %i[index show] do

@@ -137,7 +137,23 @@ BEFORE DELETE ON payment_attempts
 BEGIN
   SELECT RAISE(ABORT, 'payment_attempts is append-only');
 END;
+CREATE TABLE IF NOT EXISTS "plan_changes" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "subscription_id" integer NOT NULL, "from_plan_id" integer NOT NULL, "to_plan_id" integer NOT NULL, "kind" varchar NOT NULL, "strategy" varchar NOT NULL, "status" varchar NOT NULL, "proration_date" datetime(6), "effective_at" datetime(6) NOT NULL, "credit_cents" integer DEFAULT 0 NOT NULL, "charge_cents" integer DEFAULT 0 NOT NULL, "net_cents" integer DEFAULT 0 NOT NULL, "invoice_id" integer, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL, CONSTRAINT "fk_rails_207719221a"
+FOREIGN KEY ("subscription_id")
+  REFERENCES "subscriptions" ("id")
+, CONSTRAINT "fk_rails_41e1964728"
+FOREIGN KEY ("from_plan_id")
+  REFERENCES "plans" ("id")
+, CONSTRAINT "fk_rails_277d281b22"
+FOREIGN KEY ("to_plan_id")
+  REFERENCES "plans" ("id")
+, CONSTRAINT "fk_rails_25269cf082"
+FOREIGN KEY ("invoice_id")
+  REFERENCES "invoices" ("id")
+, CONSTRAINT plan_changes_kind_known CHECK (kind IN ('upgrade', 'downgrade', 'lateral', 'trial_swap')), CONSTRAINT plan_changes_strategy_known CHECK (strategy IN ('immediate', 'at_period_end')), CONSTRAINT plan_changes_status_known CHECK (status IN ('scheduled', 'applied', 'canceled')), CONSTRAINT plan_changes_net_consistent CHECK (net_cents = credit_cents + charge_cents));
+CREATE INDEX "index_plan_changes_on_subscription_id" ON "plan_changes" ("subscription_id");
+CREATE UNIQUE INDEX "index_plan_changes_one_scheduled_per_subscription" ON "plan_changes" ("subscription_id") WHERE status = 'scheduled';
 INSERT INTO "schema_migrations" (version) VALUES
+('20260924222126'),
 ('20260924220007'),
 ('20260924220005'),
 ('20260924220003'),

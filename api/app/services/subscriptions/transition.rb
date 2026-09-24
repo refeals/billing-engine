@@ -32,6 +32,13 @@ module Subscriptions
           webhook_event_id: event.webhook_event_id, billing_event: event, metadata: @metadata,
           occurred_at: event.occurred_at
         )
+        # A canceled subscription never renews, so a change waiting for renewal would stay
+        # "scheduled" forever. Every cancellation path comes through here.
+        if @to == "canceled"
+          @subscription.plan_changes.scheduled.each do |plan_change|
+            PlanChanges::CancelScheduled.call(plan_change, reason: "subscription_canceled")
+          end
+        end
         @subscription
       end
     end

@@ -20,7 +20,7 @@ RSpec.describe "Subscriptions", type: :request do
 
     expect(response).to have_http_status(:created)
     expect(json).to include("status" => "trialing", "trial_ends_at" => (now + 14.days).iso8601,
-      "allowed_actions" => %w[cancel_now cancel_at_period_end], "lock_version" => 0)
+      "allowed_actions" => %w[cancel_now cancel_at_period_end change_plan], "lock_version" => 0)
     expect(json["customer"]).to eq("id" => customer.id, "name" => "Studio Flow", "email" => "hello@flow.test")
   end
 

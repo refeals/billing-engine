@@ -23,11 +23,17 @@ class SubscriptionSerializer
       lock_version: subscription.lock_version,
       allowed_actions: subscription.allowed_actions,
       default_payment_method: default_payment_method,
+      scheduled_plan_change: scheduled_plan_change,
       created_at: subscription.created_at.iso8601
     }
   end
 
   private
+
+  def scheduled_plan_change
+    change = @subscription.plan_changes.scheduled.first
+    change && PlanChangeSerializer.new(change).as_json
+  end
 
   def default_payment_method
     card = @subscription.customer.default_payment_method

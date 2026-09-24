@@ -3,11 +3,15 @@ module Invoices
   # transaction: lines, credit, number and provider id either all exist or none do. The
   # invoice is born `open`; it becomes `paid` only when the provider's webhook says so.
   class Issue < ApplicationService
-    def initialize(subscription:, billing_reason:, period_start:, period_end:)
+    # `lines` default to one subscription line for the period at the plan's price; plan
+    # changes pass their proration lines instead. Each line: kind, description, amount_cents
+    # and optionally plan, period_start, period_end.
+    def initialize(subscription:, billing_reason:, period_start:, period_end:, lines: nil)
       @subscription = subscription
       @billing_reason = billing_reason
       @period_start = period_start
       @period_end = period_end
+      @lines = lines || [ subscription_line ]
     end
 
     def call
@@ -16,9 +20,7 @@ module Invoices
         invoice.provider_invoice_id = PaymentGateway.current.create_invoice(snapshot: provider_snapshot(invoice))
         invoice.save!
 
-        invoice.line_items.create!(kind: "subscription", plan: plan, amount_cents: plan.amount_cents,
-          description: "#{plan.name} (#{@period_start.to_date} – #{@period_end.to_date})",
-          period_start: @period_start, period_end: @period_end)
+        @lines.each { |line| invoice.line_items.create!(line) }
         apply_credit(invoice) if invoice.credit_applied_cents.positive?
 
         Audit.record(event_type: "invoice.issued", subject: invoice,
@@ -36,13 +38,21 @@ module Invoices
       @subscription.plan
     end
 
+    def subscription_line
+      {
+        kind: "subscription", plan: plan, amount_cents: plan.amount_cents,
+        description: "#{plan.name} (#{@period_start.to_date} – #{@period_end.to_date})",
+        period_start: @period_start, period_end: @period_end
+      }
+    end
+
     def customer
       @subscription.customer
     end
 
     def build_invoice
       now = BillingClock.now
-      subtotal = plan.amount_cents
+      subtotal = @lines.sum { |line| line[:amount_cents] }
       # Credit from earlier downgrades or refunds is spent before the card is charged.
       credit = [ customer.reload.credit_balance_cents, subtotal ].min
       total = subtotal - credit
