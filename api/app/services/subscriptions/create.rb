@@ -11,11 +11,15 @@ module Subscriptions
       end
 
       ActiveRecord::Base.transaction do
-        if @customer.subscriptions.live.exists?
-          raise DomainError.new("#{@customer.name} already has a live subscription", code: "customer_already_subscribed")
-        end
+        ensure_no_live_subscription!
 
-        Transition.call(Subscription.new(base_attributes), to: initial_status, reason: "subscription_created")
+        # The provider hands out the subscription id, so it is created there before our
+        # insert; the checks above run first, so a refused create never reaches it.
+        subscription = Subscription.new(base_attributes)
+        subscription.provider_subscription_id = PaymentGateway.current.create_subscription(
+          snapshot: subscription.provider_snapshot.merge(status: initial_status)
+        )
+        Transition.call(subscription, to: initial_status, reason: "subscription_created")
       end
     rescue ActiveRecord::RecordNotUnique
       # The partial unique index caught a concurrent create the check above couldn't see.
@@ -23,6 +27,12 @@ module Subscriptions
     end
 
     private
+
+    def ensure_no_live_subscription!
+      return unless @customer.subscriptions.live.exists?
+
+      raise DomainError.new("#{@customer.name} already has a live subscription", code: "customer_already_subscribed")
+    end
 
     def now
       @now ||= BillingClock.now
@@ -44,7 +54,6 @@ module Subscriptions
 
       {
         customer: @customer, plan: @plan,
-        provider_subscription_id: FakeStripe::ProviderIds.generate("sub"),
         current_period_start: now, current_period_end: period_end,
         trial_ends_at: (period_end if trial?)
       }

@@ -39,6 +39,9 @@ Rails.application.routes.draw do
             post :reset
           end
           resources :test_cards, only: :index
+          resources :events, only: %i[index create] do
+            post :deliver, on: :member
+          end
         end
       end
     end

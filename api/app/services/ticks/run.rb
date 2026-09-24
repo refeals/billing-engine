@@ -8,8 +8,10 @@ module Ticks
       Ticks::CancelAtPeriodEnd,
       Ticks::EndTrials,
       Ticks::ResumePaused,
-      # Last: a subscription resumed today with an old period gets current dates.
-      Ticks::RenewPeriods
+      # A subscription resumed today with an old period gets current dates.
+      Ticks::RenewPeriods,
+      # Last: retries go out after everything above has been applied.
+      Ticks::RetryProviderDeliveries
     ].freeze
 
     # Each step responds to `.call(at:)` and returns a hash of counters for the tick report.

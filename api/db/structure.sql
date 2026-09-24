@@ -82,7 +82,12 @@ CREATE UNIQUE INDEX "index_webhook_events_on_provider_event_id" ON "webhook_even
 CREATE INDEX "index_webhook_events_on_provider_object_id" ON "webhook_events" ("provider_object_id");
 CREATE INDEX "index_webhook_events_on_processing_status" ON "webhook_events" ("processing_status");
 CREATE INDEX "index_webhook_events_on_event_type" ON "webhook_events" ("event_type");
+CREATE TABLE IF NOT EXISTS "mocked_webhook_events" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "event_id" varchar NOT NULL, "event_type" varchar NOT NULL, "api_version" varchar NOT NULL, "payload" json NOT NULL, "provider_object_id" varchar NOT NULL, "provider_subscription_id" varchar, "provider_created_at" datetime(6) NOT NULL, "delivery_mode" varchar DEFAULT 'deliver' NOT NULL, "copies" integer DEFAULT 1 NOT NULL, "delivery_status" varchar DEFAULT 'pending' NOT NULL, "delivery_count" integer DEFAULT 0 NOT NULL, "delivery_attempts" integer DEFAULT 0 NOT NULL, "last_delivery_result" varchar, "last_delivered_at" datetime(6), "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL, CONSTRAINT mocked_webhook_events_delivery_status_known CHECK (delivery_status IN ('pending', 'delivered', 'dropped')), CONSTRAINT mocked_webhook_events_delivery_mode_known CHECK (delivery_mode IN ('deliver', 'drop')), CONSTRAINT mocked_webhook_events_copies_range CHECK (copies BETWEEN 1 AND 5));
+CREATE UNIQUE INDEX "index_mocked_webhook_events_on_event_id" ON "mocked_webhook_events" ("event_id");
+CREATE INDEX "index_mocked_webhook_events_on_provider_subscription_id" ON "mocked_webhook_events" ("provider_subscription_id");
+CREATE INDEX "index_mocked_webhook_events_on_delivery_status" ON "mocked_webhook_events" ("delivery_status");
 INSERT INTO "schema_migrations" (version) VALUES
+('20260924214612'),
 ('20260924195002'),
 ('20260924193755'),
 ('20260924193753'),
