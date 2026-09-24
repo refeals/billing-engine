@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import { navigation } from '@/router/navigation'
+
+// Sections stay highlighted on their detail pages (/customers/12); the dashboard ('/')
+// only on itself, since every path starts with '/'.
+const activeClass = 'bg-canvas font-medium text-ink'
 </script>
 
 <template>
@@ -20,7 +24,8 @@ import { navigation } from '@/router/navigation'
             v-if="item.enabled"
             :to="item.to"
             class="block rounded-md px-2 py-1.5 text-sm text-ink-muted hover:bg-canvas hover:text-ink"
-            exact-active-class="bg-canvas font-medium text-ink"
+            :active-class="item.to === '/' ? '' : activeClass"
+            :exact-active-class="activeClass"
           >
             {{ item.label }}
           </RouterLink>

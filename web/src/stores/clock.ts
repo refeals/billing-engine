@@ -1,8 +1,9 @@
 import { ref } from 'vue'
 import { defineStore } from 'pinia'
 
-import { ApiError } from '@/api/client'
+import type { ApiError } from '@/api/client'
 import { advanceClock, fetchClock, resetClock, type AdvanceResult } from '@/api/clock'
+import { toApiError } from '@/api/errors'
 
 export const useClockStore = defineStore('clock', () => {
   const now = ref<string | null>(null)
@@ -19,8 +20,7 @@ export const useClockStore = defineStore('clock', () => {
     try {
       return await action()
     } catch (caught) {
-      error.value =
-        caught instanceof ApiError ? caught : new ApiError(0, 'unknown_error', String(caught))
+      error.value = toApiError(caught)
       return null
     } finally {
       pending.value = false

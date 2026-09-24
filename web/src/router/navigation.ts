@@ -21,8 +21,8 @@ export const navigation: NavigationGroup[] = [
     label: 'Billing',
     items: [
       { label: 'Subscriptions', to: '/subscriptions', plan: '04', enabled: false },
-      { label: 'Customers', to: '/customers', plan: '03', enabled: false },
-      { label: 'Plans', to: '/plans', plan: '03', enabled: false },
+      { label: 'Customers', to: '/customers', plan: '03', enabled: true },
+      { label: 'Plans', to: '/plans', plan: '03', enabled: true },
       { label: 'Invoices', to: '/invoices', plan: '07', enabled: false },
     ],
   },

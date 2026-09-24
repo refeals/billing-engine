@@ -1,4 +1,5 @@
 import { apiRequest } from './client'
+import { toQueryString } from './query'
 import type { PageMeta, Paginated } from './types'
 
 export const ACTOR_TYPES = ['admin', 'webhook', 'system_job', 'reconciliation'] as const
@@ -35,18 +36,8 @@ export interface BillingEventsMeta extends PageMeta {
   event_types: string[]
 }
 
-export function buildQuery(filters: BillingEventFilters): string {
-  const params = new URLSearchParams()
-  for (const [key, value] of Object.entries(filters)) {
-    if (value) params.set(key, value)
-  }
-
-  const query = params.toString()
-  return query ? `?${query}` : ''
-}
-
 export function fetchBillingEvents(
   filters: BillingEventFilters = {},
 ): Promise<Paginated<BillingEvent, BillingEventsMeta>> {
-  return apiRequest(`/billing_events${buildQuery(filters)}`)
+  return apiRequest(`/billing_events${toQueryString({ ...filters })}`)
 }

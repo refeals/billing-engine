@@ -1,16 +1,12 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, watch } from 'vue'
 import { useRoute, useRouter, type LocationQuery } from 'vue-router'
 
-import { ApiError } from '@/api/client'
-import {
-  ACTOR_TYPES,
-  fetchBillingEvents,
-  type BillingEvent,
-  type BillingEventFilters,
-  type BillingEventsMeta,
-} from '@/api/billingEvents'
+import { ACTOR_TYPES, fetchBillingEvents, type BillingEventFilters } from '@/api/billingEvents'
 import AuditEventItem from '@/components/AuditEventItem.vue'
+import EmptyState from '@/components/EmptyState.vue'
+import PaginationNav from '@/components/PaginationNav.vue'
+import { useAsyncData } from '@/composables/useAsyncData'
 import { useClockRefresh } from '@/composables/useClockRefresh'
 
 const FILTER_KEYS = ['event_type', 'actor_type', 'from', 'to'] as const
@@ -18,12 +14,6 @@ type FilterKey = (typeof FILTER_KEYS)[number]
 
 const route = useRoute()
 const router = useRouter()
-
-const events = ref<BillingEvent[]>([])
-const meta = ref<BillingEventsMeta | null>(null)
-const loading = ref(false)
-const error = ref<ApiError | null>(null)
-let latestRequest = 0
 
 // Filters live in the URL so a filtered view can be shared or bookmarked.
 function filtersFrom(query: LocationQuery): BillingEventFilters {
@@ -37,27 +27,10 @@ function filtersFrom(query: LocationQuery): BillingEventFilters {
 
 const filters = computed(() => filtersFrom(route.query))
 const hasFilters = computed(() => FILTER_KEYS.some((key) => filters.value[key]))
-const page = computed(() => Number(filters.value.page ?? '1'))
 
-async function load() {
-  const request = ++latestRequest
-  loading.value = true
-  error.value = null
-
-  try {
-    const result = await fetchBillingEvents(filters.value)
-    // A slower, older request must not overwrite the results of a newer filter.
-    if (request !== latestRequest) return
-    events.value = result.data
-    meta.value = result.meta
-  } catch (caught) {
-    if (request !== latestRequest) return
-    error.value =
-      caught instanceof ApiError ? caught : new ApiError(0, 'unknown_error', String(caught))
-  } finally {
-    if (request === latestRequest) loading.value = false
-  }
-}
+const { data, error, loading, reload } = useAsyncData(() => fetchBillingEvents(filters.value))
+const events = computed(() => data.value?.data ?? [])
+const meta = computed(() => data.value?.meta ?? null)
 
 function setFilter(key: FilterKey, value: string) {
   const query = { ...route.query, [key]: value || undefined }
@@ -77,12 +50,12 @@ function inputValue(event: Event): string {
   return (event.target as HTMLInputElement | HTMLSelectElement).value
 }
 
-useClockRefresh(load)
+useClockRefresh(reload)
 // Leaving the page also changes route.query; only react to changes made on this page.
 watch(
   () => route.query,
   () => {
-    if (route.name === 'audit-log') load()
+    if (route.name === 'audit-log') reload()
   },
 )
 </script>
@@ -161,38 +134,17 @@ watch(
         <AuditEventItem v-for="event in events" :key="event.id" :event="event" />
       </ul>
 
-      <p v-else-if="!loading && !error" class="px-4 py-10 text-center text-sm text-ink-muted">
-        {{
+      <EmptyState
+        v-else-if="!loading && !error"
+        :title="hasFilters ? 'No events match these filters' : 'No events yet'"
+        :description="
           hasFilters
-            ? 'No events match these filters.'
-            : 'No events yet. Advance the clock to record the first one.'
-        }}
-      </p>
+            ? 'Try a wider date range or clear the filters.'
+            : 'Create a plan or advance the clock to record the first one.'
+        "
+      />
     </section>
 
-    <nav
-      v-if="meta && meta.total_pages > 1"
-      class="flex items-center justify-between text-sm text-ink-muted"
-    >
-      <span> Page {{ meta.page }} of {{ meta.total_pages }} · {{ meta.total_count }} events </span>
-      <div class="flex gap-2">
-        <button
-          type="button"
-          class="rounded-md border border-border bg-surface px-3 py-1 disabled:opacity-40"
-          :disabled="page <= 1 || loading"
-          @click="goToPage(page - 1)"
-        >
-          Previous
-        </button>
-        <button
-          type="button"
-          class="rounded-md border border-border bg-surface px-3 py-1 disabled:opacity-40"
-          :disabled="page >= meta.total_pages || loading"
-          @click="goToPage(page + 1)"
-        >
-          Next
-        </button>
-      </div>
-    </nav>
+    <PaginationNav v-if="meta" :meta="meta" noun="events" :disabled="loading" @change="goToPage" />
   </div>
 </template>
