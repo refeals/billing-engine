@@ -307,10 +307,13 @@ an `Idempotency-Key` header.
 - `GET /simulator/scenarios` — Response: `[{ "key": "duplicate_webhook", "title": "...", "description": "..." }]`
 - `POST /simulator/scenarios/:key/run`
   Response: `{ "scenario_run_id": 4, "subscription_id": 9, "events": [] }`
-- `POST /simulator/events` — emit a manual event.
-  Request: `{ "type": "invoice.paid", "subscription_id": 9, "delivery": "deliver" | "drop", "copies": 1 }`
+- `POST /simulator/events` — make the provider report a subscription.
+  Request: `{ "type": "customer.subscription.updated", "subscription_id": 9, "status": "past_due", "delivery": "deliver" | "drop", "copies": 1 }`
+  (`status` optional: lets the provider disagree with the engine; `copies` 1–5; invoice
+  types are added in plan 07).
 - `POST /simulator/events/:id/deliver` — deliver a dropped event, or redeliver (duplicate).
-- `GET /simulator/events` — the fake Stripe outbox.
+- `GET /simulator/events?delivery_status=&page=` — the fake Stripe outbox, with the matching
+  inbox row id once delivered.
 - `POST /simulator/reset` — wipe and reseed the database.
 
 ## 10. Database schema (draft)
@@ -429,7 +432,10 @@ someone calls `update_column`.
 - `event_id` (unique, `evt_...`), `event_type`, `api_version`, `payload` (json)
 - `provider_object_id` (`sub_...` / `in_...`), `provider_subscription_id` (indexed),
   `provider_created_at`
-- `delivery_status` (`pending` / `delivered` / `dropped`), `delivery_count`, `scenario_run_id`
+- `delivery_mode` (`deliver` / `drop`), `copies` (1–5)
+- `delivery_status` (`pending` / `delivered` / `dropped`), `delivery_count`,
+  `delivery_attempts`, `last_delivery_result`, `last_delivered_at`
+- `scenario_run_id` (added in plan 12)
 
 **webhook_events** (our inbox — where idempotency lives)
 - `provider_event_id` (**UNIQUE**), `event_type`, `provider_object_id`, `payload`,

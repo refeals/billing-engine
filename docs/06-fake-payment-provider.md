@@ -36,6 +36,23 @@ writing one new gateway class.
 - Synchronous return values are only identifiers. Outcomes (paid, failed, refunded) always
   arrive as webhooks, so our code can't take a shortcut the real provider won't offer.
 - Plans 03 and 04 start calling the gateway here (customer, card, subscription creation).
+- Implemented now: `create_customer`, `attach_payment_method`, `create_subscription`,
+  `update_subscription`. Invoice, payment and refund calls are added in plans 07 and 09, with
+  the features that use them.
+- Gateway methods take plain values, never models: the fake can't read our tables even by
+  accident (a spec checks every SQL statement a gateway call issues).
+
+### When the engine calls the provider
+- **Creates** (customer, card, subscription) call the provider inside our transaction, after
+  every local check, because the provider hands out the id we insert. The fake shares our
+  database, so its outbox row joins our transaction and delivery happens after commit, when
+  our row exists. With the real Stripe the call can't be rolled back and its webhook may even
+  arrive before our insert commits; the inbox already covers that (unknown object → failed →
+  retried).
+- **Updates** to a subscription are pushed from a model `after_commit` with a snapshot of
+  plain values, so the provider never hears about something we rolled back and no service can
+  forget the sync. Webhook observation uses `update_columns`, which skips the callback, so
+  what the provider reports is never echoed back.
 
 ### `FakeStripe`
 - Lives under `app/models/fake_stripe/` (namespaced, its own tables only). It never reads
@@ -60,11 +77,15 @@ writing one new gateway class.
 - Delivery modes set on emit: `deliver` (default), `drop` (stays `dropped`, never reaches us),
   `copies: N` (delivered N times — duplicates).
 - A 500 from the inbox leaves the event `pending` with a retry count; the next flush retries
-  it, like a provider retry schedule.
+  it, like a provider retry schedule. `Ticks::RetryProviderDeliveries` (last daily step)
+  guarantees at least one retry pass per simulated day.
+- The flush is re-entrant safe: a handler that makes the engine emit new events while we are
+  delivering gets them delivered in the same flush.
 
 ### Endpoints
 From `00-prompt.md` §9, **Simulator**: `POST /simulator/events`, `POST /simulator/events/:id/deliver`,
-`GET /simulator/events`.
+`GET /simulator/events`. Manual event types for now: `customer.subscription.updated` and
+`.deleted`, with an optional `status` so the provider can disagree with the engine.
 
 ## Frontend
 

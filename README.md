@@ -108,6 +108,35 @@ Provider events arrive at `POST /api/v1/webhooks/stripe` and go through an inbox
 Every change a webhook causes is audited with actor `webhook` and a link to the inbox row,
 so the audit log can always answer "which event did this?".
 
+### The fake provider
+
+The payment provider is a fake Stripe living in the same app (`app/models/fake_stripe/`).
+The engine only reaches it through `PaymentGateway`, and it only answers the way Stripe does:
+identifiers now, outcomes later as webhooks.
+
+```mermaid
+sequenceDiagram
+    participant Engine
+    participant Gateway as PaymentGateway (FakeStripe)
+    participant Outbox as Provider outbox
+    participant Dispatcher
+    participant Inbox as Webhook inbox
+    participant Handler
+    Engine->>Gateway: create / update (plain values)
+    Gateway->>Outbox: append Stripe-shaped event (pending)
+    Gateway-->>Engine: id only
+    Note over Engine,Outbox: engine transaction commits
+    Dispatcher->>Outbox: read pending events, oldest first
+    Dispatcher->>Inbox: deliver (N copies, or never if dropped)
+    Inbox->>Handler: process once per event id
+    Inbox-->>Dispatcher: processed / duplicate / failed
+    Dispatcher->>Outbox: delivered, or still pending (retried later)
+```
+
+The Scenario Lab (`/simulator`) shows the outbox and can make the provider report a
+subscription, possibly disagreeing with the engine, dropped (a lost webhook) or sent several
+times (duplicates).
+
 Try it with the fixture (an event type the engine doesn't handle yet, so it is acknowledged
 and ignored):
 
@@ -119,6 +148,20 @@ curl -s -X POST localhost:3001/api/v1/webhooks/stripe \
 ```
 
 ## Architecture decisions
+
+- **One gateway, outcomes only via webhooks.** The engine talks to the provider through
+  `PaymentGateway`; replacing the fake with real Stripe means one new module. Gateway calls
+  return identifiers only, so no engine code can depend on a synchronous "it worked".
+- **The fake provider is an event-sourced outbox that never reads engine data.** Its
+  methods take plain values and write only to `mocked_webhook_events` (a spec checks every SQL
+  statement). That independence is what makes its history a fair "expected state" for
+  reconciliation later.
+- **Delivery after commit.** Events are delivered once every open transaction has
+  committed, so a webhook never sees, or acts on, data that may still roll back, and the
+  provider never hears about a change that rolled back.
+- **Subscription changes are pushed from an `after_commit` callback**, with a snapshot of
+  plain values. No service can forget it, and webhook observation writes with
+  `update_columns`, so provider reports are never echoed back.
 
 - **Simulated clock.** Billing flows span weeks (trials, renewals, a 14-day dunning
   schedule), so every piece of code reads time from `BillingClock.now`, never from
@@ -225,6 +268,18 @@ curl -s -X POST localhost:3001/api/v1/webhooks/stripe \
   provider would retry forever.
 - Unsigned events are only accepted while the simulator is on; with it off, the endpoint
   refuses everything until real signature verification exists (fail closed).
+- A dropped (lost) webhook stays in the provider's outbox and never reaches the engine
+  until it is delivered by hand; reconciliation (plan 11) will flag it on its own.
+- A delivery the inbox fails (500) stays pending at the provider and is retried on the next
+  flush, at the latest once per simulated day; once it succeeds, the inbox processes it once.
+- A change that rolls back never reaches the provider; a request refused by local checks
+  (expired card, duplicate email) never reaches it either.
+- If the provider can't be told about a committed change, the change stands, the request
+  still succeeds and the failure is audited (`provider.sync_failed`) for reconciliation, instead
+  of a 500 for work that is already done.
+- An unexpected error while delivering a webhook counts as a failed delivery (retried later),
+  never as an error for the request whose commit triggered the delivery. A manually delivered
+  "lost" event that fails goes back to the retry queue.
 - Recording a webhook doesn't bump the subscription's `lock_version`, so an operator's open
   screen isn't invalidated by an event that changed nothing.
 - Money typed by the operator is parsed digit by digit, never through floating point, and an
@@ -242,7 +297,7 @@ agreed decision live in [`docs/00-prompt.md`](docs/00-prompt.md).
 | 03 | [Catalog and customers](docs/03-catalog-and-customers.md) | Done |
 | 04 | [Subscription state machine](docs/04-subscription-state-machine.md) | Done |
 | 05 | [Webhook ingestion and idempotency](docs/05-webhook-ingestion.md) | Done |
-| 06 | [Fake payment provider](docs/06-fake-payment-provider.md) | Planned |
+| 06 | [Fake payment provider](docs/06-fake-payment-provider.md) | Done |
 | 07 | [Invoicing and payments](docs/07-invoicing-and-payments.md) | Planned |
 | 08 | [Plan changes and proration](docs/08-plan-changes-and-proration.md) | Planned |
 | 09 | [Refunds](docs/09-refunds.md) | Planned |
