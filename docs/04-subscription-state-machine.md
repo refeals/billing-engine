@@ -24,7 +24,10 @@ transition path that validates it, records it and audits it.
 - Transitions caused by payments (`past_due`, recovery — plans 07 and 10).
 - Plan changes (plan 08).
 
-## Provisional behavior until plan 07
+## Provisional behavior until plan 07 (replaced)
+
+Plan 07 replaced this: trials end with an invoice, renewals invoice, and a subscription
+without a trial is billed at creation. Kept here for the history of the decision.
 
 To make pause, resume and the ticks demonstrable before invoicing exists:
 - a plan without a trial creates the subscription already `active` (first period not charged);

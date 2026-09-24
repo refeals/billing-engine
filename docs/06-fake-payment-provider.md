@@ -84,7 +84,7 @@ writing one new gateway class.
 
 ### Endpoints
 From `00-prompt.md` §9, **Simulator**: `POST /simulator/events`, `POST /simulator/events/:id/deliver`,
-`GET /simulator/events`. Manual event types for now: `customer.subscription.updated` and
+`GET /simulator/events`. Manual event types: `customer.subscription.updated` and
 `.deleted`, with an optional `status` so the provider can disagree with the engine.
 
 ## Frontend

@@ -253,10 +253,11 @@ an `Idempotency-Key` header.
   transition is also a billing event, so no separate endpoint is needed.
 
 ### Invoices
-- `GET /invoices?status=&subscription_id=`
-- `GET /invoices/:id` — includes `line_items`, `payment_attempts`, `refunds`.
-- `POST /invoices/:id/retry_payment` — asks the fake Stripe for a new charge. The result
-  comes back as a webhook; there is no synchronous shortcut.
+- `GET /invoices?status=&subscription_id=&customer_id=&page=`
+- `GET /invoices/:id` — includes `line_items`, `payment_attempts` (and `refunds`, plan 09).
+- `POST /invoices/:id/retry_payment` — asks the fake Stripe for a new charge with the
+  current default card. The result comes back as a webhook (processed before the response);
+  there is no synchronous shortcut. 422 `invoice_not_payable` if nothing is due.
 - `POST /invoices/:id/refunds`
   Request: `{ "amount_cents": 5000, "reason": "requested_by_customer", "destination": "original_method" | "credit_balance" }`
   Response: the refund. 422 if the amount exceeds what is still refundable.
@@ -384,13 +385,17 @@ someone calls `update_column`.
 ### Billing
 
 **invoices**
-- `subscription_id`, `customer_id`, `provider_invoice_id` (unique), `number`
-- `status`: `draft` / `open` / `paid` / `void` / `uncollectible`
+- `subscription_id`, `customer_id`, `provider_invoice_id` (unique), `number` (unique,
+  `BE-2026-000123`, gap-free per year via `invoice_number_sequences`)
+- `status`: `open` / `paid` / `void` / `uncollectible` (no persisted `draft`: an invoice is
+  built and finalized in one transaction)
 - `billing_reason`: `subscription_create` / `subscription_cycle` / `subscription_update` / `manual`
 - `period_start`, `period_end`
 - `subtotal_cents`, `credit_applied_cents`, `total_cents`, `amount_paid_cents`,
   `amount_refunded_cents`, `amount_due_cents`, `currency`
-- `due_at`, `paid_at`, `attempt_count`
+- `issued_at` (simulated time), `paid_at`, `attempt_count`
+- Checks: amounts ≥ 0 and `total_cents = subtotal_cents - credit_applied_cents`. Number,
+  period and amounts are read-only once issued.
 - `last_provider_event_at` — stale-event detection is per object, so invoices need their own
   ordering marker (an old event for invoice A must not be discarded because of invoice B).
 
@@ -403,7 +408,8 @@ someone calls `update_column`.
 - `invoice_id`, `payment_method_id`, `provider_charge_id` (unique)
 - `status` (`succeeded` / `failed`), `failure_code` (`card_declined` / `expired_card` /
   `insufficient_funds`)
-- `amount_cents`, `attempted_at`, `dunning_step_id` (nullable)
+- `amount_cents`, `attempted_at`, `webhook_event_id`, `dunning_step_id` (nullable, plan 10)
+- `failure_code` also `no_payment_method` (the customer has no default card)
 
 **refunds**
 - `invoice_id`, `payment_attempt_id`, `provider_refund_id` (unique)

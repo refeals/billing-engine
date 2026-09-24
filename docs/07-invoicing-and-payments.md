@@ -68,6 +68,24 @@ and subscriptions created without a trial get their first invoice.
 - **Retry payment** (`POST /invoices/:id/retry_payment`): only `open` invoices, uses the
   current default card; the result comes by webhook.
 
+### Decisions taken during implementation
+- **One settlement path.** Even a $0 invoice (covered by credit) goes to the provider, which
+  answers `invoice.paid` without a charge. The engine never marks an invoice paid itself.
+- **No persisted `draft`.** Lines, credit, number and provider id are created in one
+  transaction, so an invoice is `open` from its first commit.
+- **Attempts from either event.** `charge.*` and `invoice.*` both record the payment attempt;
+  the unique `provider_charge_id` makes whichever arrives second a no-op.
+- **No card is a payment failure** (`no_payment_method`), reported by the provider like any
+  other.
+- **Pause stops the billing clock.** On resume, a period that ended during the pause is
+  replaced by a new one starting at the resume moment, billed right away.
+- **Gap-free numbers** via a per-year counter incremented in the invoice's transaction.
+
+### Known limitation (closed by plan 10)
+A subscription that stays `past_due` longer than a whole period and then recovers is billed
+for the elapsed periods, one per daily tick. Dunning (plan 10) cancels a `past_due`
+subscription on day 14, so with monthly and yearly plans this can't happen once it exists.
+
 ## Frontend
 
 - Screen 9 **Invoices list**.

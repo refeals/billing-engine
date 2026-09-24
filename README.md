@@ -90,6 +90,30 @@ Updating `status` any other way raises.
 A cancellation "at period end" is a flag, not a state: the subscription keeps its status
 until the period ends, and the flag can be removed until then.
 
+## The money cycle
+
+```mermaid
+sequenceDiagram
+    participant Tick as Daily tick
+    participant Engine
+    participant Provider as Fake Stripe
+    participant Inbox as Webhook inbox
+    Tick->>Engine: trial ended / period ended
+    Engine->>Engine: roll period, issue invoice (credit applied first), open
+    Engine->>Provider: pay_invoice (default card)
+    Provider-->>Inbox: charge.succeeded + invoice.paid
+    Inbox->>Engine: invoice paid; trialing → active, past_due → active
+    Provider-->>Inbox: or charge.failed + invoice.payment_failed
+    Inbox->>Engine: attempt recorded; trialing/active → past_due
+```
+
+- A subscription created without a trial is billed at creation; a trial is billed when it
+  ends; active subscriptions are billed when their period ends. `past_due` and `paused`
+  subscriptions are not renewed.
+- Credit balance is spent before the card. A card's result comes from its test token and its
+  expiry date against the simulated clock.
+- An open invoice can be retried from its screen with the customer's current default card.
+
 ## Webhook processing
 
 Provider events arrive at `POST /api/v1/webhooks/stripe` and go through an inbox
@@ -142,7 +166,7 @@ and ignored):
 
 ```sh
 curl -s -X POST localhost:3001/api/v1/webhooks/stripe \
-  -H 'Content-Type: application/json' -d @api/spec/fixtures/webhooks/invoice_paid.json
+  -H 'Content-Type: application/json' -d @api/spec/fixtures/webhooks/invoice_finalized.json
 # {"status":"ignored_unhandled",...}  — send it again:
 # {"status":"duplicate",...}          — the inbox shows one row with 1 duplicate delivery
 ```
@@ -201,9 +225,15 @@ curl -s -X POST localhost:3001/api/v1/webhooks/stripe \
 - **Allowed actions come from the API.** `allowed_actions` is computed by the model from the
   state and flags; the API refuses anything else and the UI only renders those buttons, so
   both can't disagree.
-- **Provisional until invoicing (plan 07).** Trials currently convert to active when they end
-  and active periods roll forward when they end, both without charging, and plans without a
-  trial start active. Plan 07 replaces this with an invoice and a payment webhook.
+- **Invoices are only settled by the provider's webhook.** The engine issues an invoice,
+  asks the provider to collect it and waits; `invoice.paid` is the only thing that marks it
+  paid and activates a trial or recovers a past-due subscription. Even a $0 invoice covered
+  by credit goes through the provider, so there is exactly one settlement path.
+- **An issued invoice is a document.** Number, period and amounts are read-only, lines are
+  append-only, and `total = subtotal - credit applied` is a database check. Numbers are
+  gap-free per year: the counter is incremented in the invoice's own transaction.
+- **Pausing stops the billing clock.** Paused time is never billed: on resume, a period that
+  ended during the pause is replaced by a new one starting at the resume moment.
 - **Inbox pattern for webhooks, deduplicated by event id.** The provider's event id is the
   idempotency key, backed by a unique index. Duplicates and deliberately ignored event types
   get 200 (anything else makes the provider retry forever); a failed handler gets 500 so the
@@ -282,6 +312,16 @@ curl -s -X POST localhost:3001/api/v1/webhooks/stripe \
   "lost" event that fails goes back to the retry queue.
 - Recording a webhook doesn't bump the subscription's `lock_version`, so an operator's open
   screen isn't invalidated by an event that changed nothing.
+- A trial becomes active only when `invoice.paid` arrives; a declined card, an expired card
+  (checked against the simulated date) or no card at all moves it to `past_due` instead.
+- A card that expires between two renewals fails the second renewal with `expired_card`.
+- Credit covering part of an invoice reduces the charge; credit covering all of it settles
+  the invoice without any charge. Ledger, invoice lines and totals always agree.
+- The same charge reported by two events (`charge.succeeded` and `invoice.paid`) is recorded
+  once; a failure reported after the payment can't undo it.
+- A trial is invoiced once, even if its payment keeps failing; a paused subscription is not
+  billed for the paused time.
+- An invoice number rolled back with its invoice is reused, so the sequence has no gaps.
 - Money typed by the operator is parsed digit by digit, never through floating point, and an
   ambiguous comma (`12,5`) is rejected instead of guessed.
 
@@ -298,7 +338,7 @@ agreed decision live in [`docs/00-prompt.md`](docs/00-prompt.md).
 | 04 | [Subscription state machine](docs/04-subscription-state-machine.md) | Done |
 | 05 | [Webhook ingestion and idempotency](docs/05-webhook-ingestion.md) | Done |
 | 06 | [Fake payment provider](docs/06-fake-payment-provider.md) | Done |
-| 07 | [Invoicing and payments](docs/07-invoicing-and-payments.md) | Planned |
+| 07 | [Invoicing and payments](docs/07-invoicing-and-payments.md) | Done |
 | 08 | [Plan changes and proration](docs/08-plan-changes-and-proration.md) | Planned |
 | 09 | [Refunds](docs/09-refunds.md) | Planned |
 | 10 | [Dunning](docs/10-dunning.md) | Planned |
