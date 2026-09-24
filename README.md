@@ -147,6 +147,20 @@ Oct 1 – Nov 1 (31 days) upgrades to $99/month on Oct 11, with 21 days left:
   answers 409 instead of charging a different amount.
 - Each line is rounded on its own, so invoice lines always add up exactly to the net shown.
 
+## Refunds
+
+A paid invoice can be refunded in full or in parts, up to what the card actually paid:
+
+- **To the card**: the engine records a `pending` refund and asks the provider; the
+  provider's `refund.updated` settles it as `succeeded` or `failed` (a failed refund gives its
+  amount back to what can still be refunded).
+- **To the credit balance**: no money leaves, so it is immediate and internal: a ledger credit
+  that the next invoices spend.
+
+The refundable amount counts pending refunds, so two quick requests can't both pass, and the
+limit is also a database check and a rule of the provider itself. Refunds never change the
+subscription; canceling is a separate action.
+
 ## Webhook processing
 
 Provider events arrive at `POST /api/v1/webhooks/stripe` and go through an inbox
@@ -368,8 +382,25 @@ curl -s -X POST localhost:3001/api/v1/webhooks/stripe \
   price; scheduling another replaces it, and canceling the subscription drops it.
 - Changing between monthly and yearly billing is refused (not supported) instead of being
   prorated wrongly.
+- Partial refunds add up to exactly what was paid and not one cent more (service, database
+  and provider all refuse the extra cent); pending refunds count against the limit.
+- A refund that fails at the provider releases its amount; a refund to the credit balance
+  is immediate and spent by the next invoice.
+- A refund's webhooks delivered twice don't count it twice; an invoice paid entirely with
+  credit has nothing refundable.
 - Money typed by the operator is parsed digit by digit, never through floating point, and an
   ambiguous comma (`12,5`) is rejected instead of guessed.
+
+## Future improvements
+
+Deliberately out of scope for now:
+
+- Real Stripe integration and webhook signature verification (the gateway and the verifier
+  are single swap points).
+- Disputes and chargebacks.
+- A hash chain on the audit log, so tampering outside the application is detectable.
+- Proration when switching between monthly and yearly billing.
+- Authentication and multiple operators; multiple currencies.
 
 ## Roadmap
 
@@ -386,7 +417,7 @@ agreed decision live in [`docs/00-prompt.md`](docs/00-prompt.md).
 | 06 | [Fake payment provider](docs/06-fake-payment-provider.md) | Done |
 | 07 | [Invoicing and payments](docs/07-invoicing-and-payments.md) | Done |
 | 08 | [Plan changes and proration](docs/08-plan-changes-and-proration.md) | Done |
-| 09 | [Refunds](docs/09-refunds.md) | Planned |
+| 09 | [Refunds](docs/09-refunds.md) | Done |
 | 10 | [Dunning](docs/10-dunning.md) | Planned |
 | 11 | [Reconciliation](docs/11-reconciliation.md) | Planned |
 | 12 | [Scenario Lab and seeds](docs/12-scenario-lab-and-seeds.md) | Planned |

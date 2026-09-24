@@ -42,6 +42,19 @@ balance, without ever refunding more than was paid.
 ### Endpoint
 `POST /invoices/:id/refunds` as in `00-prompt.md` §9.
 
+### Decisions taken during implementation
+- **Refundable = card payment minus pending and succeeded refunds.** Credit applied to an
+  invoice isn't cash, so it isn't refundable; a failed refund releases its amount.
+- **The limit holds in three places:** the service (under an invoice lock), a database check
+  on `invoices.amount_refunded_cents <= amount_paid_cents`, and the fake provider, which
+  refuses to refund more than it charged (from its own outbox).
+- **Only `pending → succeeded/failed` changes amounts**, so a duplicate or late
+  `refund.updated` can't count twice. `charge.refunded` is compared (audited with `matches`),
+  not applied.
+- **Test card `pm_card_refundFail`**: charges succeed, refunds fail, like Stripe's
+  refund-failure test card.
+- **Refunds never change the subscription.**
+
 ## Frontend
 
 - Screen 10: refunds table and "Refund" dialog (amount prefilled with the refundable

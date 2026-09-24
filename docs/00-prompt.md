@@ -267,7 +267,9 @@ an `Idempotency-Key` header.
   there is no synchronous shortcut. 422 `invoice_not_payable` if nothing is due.
 - `POST /invoices/:id/refunds`
   Request: `{ "amount_cents": 5000, "reason": "requested_by_customer", "destination": "original_method" | "credit_balance" }`
-  Response: the refund. 422 if the amount exceeds what is still refundable.
+  Response: the refreshed invoice with its `refunds` and `refundable_cents` (a card refund has
+  already been settled by the provider's webhook). 422 `refund_exceeds_refundable` (with
+  `refundable_cents`), `invoice_not_refundable`, `no_charge_to_refund`, `invalid_refund`.
 
 ### Webhooks
 - `POST /webhooks/stripe` — ingestion, Stripe-shaped payload:
@@ -422,9 +424,14 @@ someone calls `update_column`.
 
 **refunds**
 - `invoice_id`, `payment_attempt_id`, `provider_refund_id` (unique)
-- `amount_cents`, `destination` (`original_method` / `credit_balance`), `reason`, `status`
-- The sum of refunds never exceeds `amount_paid_cents` — validated in the model, inside a
-  transaction.
+- `amount_cents`, `destination` (`original_method` / `credit_balance`), `reason`
+  (`requested_by_customer` / `duplicate` / `fraudulent` / `service_issue`), `status`
+  (`pending` / `succeeded` / `failed`), `failure_reason`, `requested_at`, `completed_at`,
+  `last_provider_event_at`; `provider_refund_id` is null for refunds to the credit balance.
+- Refundable = `amount_paid_cents` minus pending and succeeded refunds (credit applied to an
+  invoice is not cash and isn't refundable). Checked under an invoice lock, by the database
+  (`amount_refunded_cents <= amount_paid_cents`) and by the provider (never more than the
+  charge).
 
 ### Dunning
 
