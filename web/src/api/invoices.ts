@@ -1,4 +1,5 @@
 import { apiRequest } from './client'
+import type { Refund } from './refunds'
 import { idempotencyHeaders } from './idempotency'
 import { toQueryString } from './query'
 import type { Paginated } from './types'
@@ -52,6 +53,8 @@ export interface PaymentAttempt {
 export interface InvoiceDetail extends Invoice {
   line_items: InvoiceLineItem[]
   payment_attempts: PaymentAttempt[]
+  refunds: Refund[]
+  refundable_cents: number
 }
 
 export function fetchInvoices(

@@ -14,6 +14,7 @@ import { useClockRefresh } from '@/composables/useClockRefresh'
 import { formatDate, formatDateTime, formatMoney } from '@/utils/format'
 import { humanize } from '@/utils/text'
 import InvoiceStatusBadge from './InvoiceStatusBadge.vue'
+import RefundDialog from './RefundDialog.vue'
 
 const route = useRoute()
 const invoiceId = computed(() => String(route.params.id))
@@ -49,6 +50,8 @@ async function retry() {
   }
 }
 
+const refunding = ref(false)
+
 const totals = computed(() => {
   const current = invoice.value
   if (!current) return []
@@ -67,6 +70,11 @@ const totals = computed(() => {
       hidden: current.amount_refunded_cents === 0,
     },
     { label: 'Amount due', cents: current.amount_due_cents, strong: true },
+    {
+      label: 'Still refundable',
+      cents: current.refundable_cents,
+      hidden: current.status !== 'paid',
+    },
   ].filter((row) => !row.hidden)
 })
 </script>
@@ -107,9 +115,18 @@ const totals = computed(() => {
               {{ invoice.provider_invoice_id }} · issued {{ formatDateTime(invoice.issued_at) }}
             </p>
           </div>
-          <BaseButton v-if="invoice.payable" variant="primary" @click="openRetry">
-            Retry payment
-          </BaseButton>
+          <div class="flex gap-2">
+            <BaseButton v-if="invoice.payable" variant="primary" @click="openRetry">
+              Retry payment
+            </BaseButton>
+            <BaseButton
+              v-if="invoice.refundable_cents > 0"
+              variant="danger"
+              @click="refunding = true"
+            >
+              Refund
+            </BaseButton>
+          </div>
         </div>
       </header>
 
@@ -201,6 +218,52 @@ const totals = computed(() => {
           description="Nothing was charged: the invoice is still waiting, or credit covered it."
         />
       </section>
+
+      <section v-if="invoice.refunds.length > 0" class="rounded-lg border border-border bg-surface">
+        <h3 class="border-b border-border px-5 py-3 text-sm font-semibold">Refunds</h3>
+        <table class="w-full text-sm">
+          <tbody>
+            <tr
+              v-for="refund in invoice.refunds"
+              :key="refund.id"
+              class="border-b border-border last:border-b-0"
+            >
+              <td class="px-5 py-2 text-ink-muted">{{ formatDateTime(refund.requested_at) }}</td>
+              <td class="px-5 py-2">
+                {{ refund.destination === 'credit_balance' ? 'To credit balance' : 'To card' }}
+                <p class="text-xs text-ink-faint">{{ humanize(refund.reason) }}</p>
+              </td>
+              <td class="px-5 py-2 text-right tabular-nums">
+                {{ formatMoney(refund.amount_cents) }}
+              </td>
+              <td class="px-5 py-2 text-right">
+                <BaseBadge
+                  :tone="
+                    refund.status === 'succeeded'
+                      ? 'success'
+                      : refund.status === 'failed'
+                        ? 'danger'
+                        : 'warning'
+                  "
+                  :title="refund.failure_reason ?? undefined"
+                >
+                  {{
+                    refund.status === 'failed' && refund.failure_reason
+                      ? humanize(refund.failure_reason)
+                      : humanize(refund.status)
+                  }}
+                </BaseBadge>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <RefundDialog
+        v-model:open="refunding"
+        :invoice="invoice"
+        @refunded="(updated) => (invoice = updated)"
+      />
 
       <ConfirmDialog
         v-model:open="confirming"
