@@ -16,6 +16,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
+      # Rails needs the sqlite3 CLI to load db/structure.sql into the test database.
+      - name: Install sqlite3 CLI
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y sqlite3
+
       - uses: ruby/setup-ruby@v1
         with:
           working-directory: api

@@ -33,29 +33,38 @@ retrofitting auditing onto existing code is where gaps appear.
   (`structure.sql`). Note this in the README, since it's an unusual choice.
 
 ### Table `billing_events`
+- `subject_type`, `subject_id` (polymorphic, nullable): what the event is about. Many events
+  concern records that are neither a subscription nor a customer (plans, invoices, the clock).
 - `subscription_id` (nullable, no FK yet — added in plan 04), `customer_id` (nullable, FK in
-  plan 03)
+  plan 03). Denormalized from the subject via `ApplicationRecord#audit_references`, so the
+  timelines are one indexed query.
 - `event_type` (string, indexed)
 - `actor_type`: `webhook` / `admin` / `system_job` / `reconciliation`
 - `webhook_event_id` (nullable, FK added in plan 05)
 - `data` (json: `before`, `after`, plus free context)
 - `occurred_at` (simulated time, from `BillingClock`), `created_at` (real time)
-- Indexes: (`subscription_id`, `occurred_at`), (`customer_id`, `occurred_at`), `event_type`.
+- Indexes: (`subscription_id`, `occurred_at`), (`customer_id`, `occurred_at`), `event_type`,
+  (`subject_type`, `subject_id`), `occurred_at`.
 
 Keeping both `occurred_at` and `created_at` is deliberate: one is business time, the other is
 when the row was really written. The difference is useful when debugging the simulator.
 
 ### `Audit.record`
-- `Audit.record(event_type:, actor:, subject:, before: nil, after: nil, context: {})`.
+- `Audit.record(event_type:, subject: nil, before: nil, after: nil, context: {}, actor: Current.actor)`.
 - Must run inside the caller's transaction. If the business change rolls back, the audit row
   rolls back too, and vice versa. The service raises if called outside a transaction, so a
   forgotten wrapper fails in tests instead of silently writing half a story.
 - The current actor (`admin`, `webhook`, …) comes from `Current.actor`, set by the
   controller, webhook ingestor or tick. Services don't pass it around.
 
+### First producer: the clock
+- `BillingClock.advance!` records `clock.day_advanced` per simulated day and `reset!` records
+  `clock.reset`, so the audit screen has real data before any domain table exists.
+
 ### Endpoint
-- `GET /api/v1/billing_events?subscription_id=&customer_id=&type=&source=&from=&to=&page=`
-- Cursor or page-based pagination (page size 50), newest first.
+- `GET /api/v1/billing_events?subscription_id=&customer_id=&event_type=&actor_type=&from=&to=&page=`
+- Page-based pagination (page size 50), newest first, in the shared list envelope.
+  `meta.event_types` lists every recorded type for the filter dropdown.
 
 ## Frontend
 

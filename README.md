@@ -27,6 +27,7 @@ simulated clock lets you fast-forward weeks of billing in seconds.
 ### Requirements
 
 - Ruby 3.4.11 (see `api/.ruby-version`)
+- `sqlite3` command-line tool (Rails uses it to load `db/structure.sql`)
 - Node.js 22.18+ or 24.12+
 - pnpm 10
 
@@ -68,11 +69,22 @@ cd web && pnpm test:unit
   time is read anywhere else. Advancing the clock runs one tick per simulated day, so work due
   on day 3 happens on day 3 even when you jump a week. Time only moves forward, except for an
   explicit reset.
+- **Append-only audit trail, enforced by the database.** Every state change writes a row
+  to `billing_events` through a single entry point (`Audit.record`), inside the same
+  transaction as the change itself, so both commit or neither does. Rows can't be changed
+  afterwards: the model refuses updates and deletes, and SQLite triggers refuse them too, so
+  paths that skip the model (`update_all`, `delete_all`, raw SQL) fail as well. Each event
+  stores both business time (`occurred_at`, from the simulated clock) and the real time it
+  was written.
+- **`structure.sql` instead of `schema.rb`.** `schema.rb` can't represent triggers, so a test
+  or freshly created database would silently lose the append-only guarantee. The cost is
+  needing the `sqlite3` CLI.
 - **Money as integer cents.** Every amount is stored as `*_cents` integers with a `currency`
   column (always `USD`). Floats never touch money.
-- **One error shape.** Every API error is `{ "error": { "code", "message", "details" } }`, with
-  422 for business-rule violations, 409 for concurrent-edit conflicts and 404 for missing
-  records. The frontend parses one format.
+- **One error shape, one list shape.** Every API error is
+  `{ "error": { "code", "message", "details" } }`, with 422 for business-rule violations, 409
+  for concurrent-edit conflicts and 404 for missing records. Every list is
+  `{ "data": [...], "meta": { "page", "per_page", "total_count", "total_pages" } }`.
 - **No authentication.** The app models a single back-office operator. Authentication is out
   of scope for a project about billing correctness.
 - **Lean Rails.** Only the frameworks in use are loaded (Active Record, Active Job, Action
@@ -84,6 +96,9 @@ cd web && pnpm test:unit
   several days runs each day's work in order.
 - A tick that fails rolls back that simulated day instead of leaving time advanced with
   half-done work.
+- Updating or deleting an audit row is refused by the database, even through raw SQL.
+- A business change and its audit row can't be split: recording an audit event outside a
+  transaction raises, and rolling back the change rolls back the event.
 
 ## Roadmap
 
@@ -93,7 +108,7 @@ agreed decision live in [`docs/00-prompt.md`](docs/00-prompt.md).
 | # | Feature | Status |
 |---|---|---|
 | 01 | [Foundation](docs/01-foundation.md) | Done |
-| 02 | [Audit log](docs/02-audit-log.md) | Planned |
+| 02 | [Audit log](docs/02-audit-log.md) | Done |
 | 03 | [Catalog and customers](docs/03-catalog-and-customers.md) | Planned |
 | 04 | [Subscription state machine](docs/04-subscription-state-machine.md) | Planned |
 | 05 | [Webhook ingestion and idempotency](docs/05-webhook-ingestion.md) | Planned |

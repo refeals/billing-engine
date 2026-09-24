@@ -182,6 +182,9 @@ Standard error shape:
              "details": { "from": "canceled", "to": "paused", "allowed": [] } } }
 ```
 
+Every list endpoint answers `{ "data": [...], "meta": { "page", "per_page", "total_count",
+"total_pages" } }` (50 per page).
+
 HTTP codes: 422 for business-rule violations, 409 for `lock_version` conflicts or an
 idempotency key reused with a different payload, 404 as usual. State-changing POSTs accept
 an `Idempotency-Key` header.
@@ -272,7 +275,9 @@ an `Idempotency-Key` header.
   Request: `{ "strategy": "apply_expected" | "acknowledge", "note": "..." }`
 
 ### Audit
-- `GET /billing_events?subscription_id=&customer_id=&type=&source=&from=&to=&page=`
+- `GET /billing_events?subscription_id=&customer_id=&event_type=&actor_type=&from=&to=&page=`
+  (`from` / `to` are inclusive `YYYY-MM-DD` dates on `occurred_at`).
+  Response: `{ "data": [...], "meta": { "page", "per_page", "total_count", "total_pages", "event_types" } }`
 
 ### Dashboard
 - `GET /dashboard/summary`
@@ -420,7 +425,9 @@ someone calls `update_column`.
 ### Reconciliation, audit and simulation
 
 **billing_events** (general audit log, append-only)
-- `subscription_id` (nullable), `customer_id`
+- `subject_type`, `subject_id` (polymorphic, nullable) — what the event is about; many events
+  concern records that are neither a subscription nor a customer (plans, invoices, the clock).
+- `subscription_id` (nullable), `customer_id` (nullable) — denormalized for timeline queries
 - `event_type`: `subscription.created` / `subscription.transitioned` / `plan.changed` /
   `invoice.issued` / `payment.failed` / `refund.issued` / `dunning.step_executed` /
   `discrepancy.detected` / ...
