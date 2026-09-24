@@ -1,0 +1,32 @@
+@import 'tailwindcss';
+
+/*
+ * Design tokens. Subscription status colors are defined once here so every badge,
+ * chart and board column uses the same meaning for the same state.
+ */
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+
+  --color-surface: #ffffff;
+  --color-canvas: #f6f7f9;
+  --color-border: #e3e6eb;
+  --color-ink: #16181d;
+  --color-ink-muted: #5d6573;
+  --color-ink-faint: #9aa1ad;
+  --color-accent: #3d5afe;
+  --color-accent-strong: #2a41c9;
+  --color-danger: #c62828;
+
+  --color-status-trialing: #6d4aff;
+  --color-status-active: #1b8a4b;
+  --color-status-past-due: #c77700;
+  --color-status-paused: #5d6573;
+  --color-status-canceled: #b3261e;
+}
+
+@layer base {
+  body {
+    @apply bg-canvas font-sans text-ink antialiased;
+  }
+}

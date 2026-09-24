@@ -1,8 +1,16 @@
 # Omakase Ruby styling for Rails
 inherit_gem: { rubocop-rails-omakase: rubocop.yml }
 
-# Overwrite or add rules to create your own house style
-#
-# # Use `[a, [b, c]]` not `[ a, [ b, c ] ]`
-# Layout/SpaceInsideArrayLiteralBrackets:
-#   Enabled: false
+require:
+  - ./lib/rubocop/cop/billing/direct_time_access
+
+Billing/DirectTimeAccess:
+  Enabled: true
+  Include:
+    - "app/**/*.rb"
+    - "lib/**/*.rb"
+  Exclude:
+    # The single place allowed to read real time.
+    - "app/services/billing_clock.rb"
+    # The cop mentions the forbidden calls in its own documentation.
+    - "lib/rubocop/**/*.rb"

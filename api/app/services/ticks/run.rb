@@ -1,0 +1,15 @@
+module Ticks
+  # Executes the daily steps for one simulated day. Later features append their step
+  # classes to STEPS; the order is explicit because steps depend on each other (e.g.
+  # renewals must run before dunning looks for failed invoices).
+  class Run
+    STEPS = [].freeze
+
+    # Each step responds to `.call(at:)` and returns a hash of counters for the tick report.
+    def self.call(at:, steps: STEPS)
+      steps.each_with_object(Hash.new(0)) do |step, report|
+        step.call(at: at).each { |counter, value| report[counter] += value }
+      end.to_h
+    end
+  end
+end

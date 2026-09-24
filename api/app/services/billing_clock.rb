@@ -1,0 +1,57 @@
+# The only source of "now" for the whole engine. Billing behavior spans weeks (trials,
+# renewals, a 14-day dunning schedule), so the demo needs time it can fast-forward.
+# Reading time anywhere else would make those flows impossible to reproduce.
+module BillingClock
+  MAX_ADVANCE_DAYS = 30
+
+  class << self
+    def now
+      clock.current_time
+    end
+
+    # Runs one tick per simulated day so a step due on day 3 fires on day 3, even when
+    # the operator jumps 7 days at once.
+    def advance!(days:)
+      days = parse_days(days)
+      tick_report = Hash.new(0)
+
+      days.times do
+        ActiveRecord::Base.transaction do
+          current = clock
+          current.update!(current_time: current.current_time + 1.day)
+          Ticks::Run.call(at: current.current_time).each { |counter, value| tick_report[counter] += value }
+        end
+      end
+
+      { now: now, ticks_run: days, tick_report: tick_report.to_h }
+    end
+
+    def reset!
+      current = clock
+      current.rewind_allowed = true
+      current.update!(current_time: real_time)
+      current.current_time
+    end
+
+    private
+
+    def clock
+      SimulationClock.find_or_create_by!(id: 1) { |created| created.current_time = real_time }
+    end
+
+    def real_time
+      Time.current.change(usec: 0)
+    end
+
+    def parse_days(value)
+      days = Integer(value, exception: false) if value.is_a?(Integer) || value.to_s.match?(/\A\d+\z/)
+      return days if days&.between?(1, MAX_ADVANCE_DAYS)
+
+      raise DomainError.new(
+        "days must be a whole number between 1 and #{MAX_ADVANCE_DAYS}",
+        code: "invalid_days",
+        details: { min: 1, max: MAX_ADVANCE_DAYS, received: value }
+      )
+    end
+  end
+end
