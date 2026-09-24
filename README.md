@@ -79,6 +79,17 @@ cd web && pnpm test:unit
 - **`structure.sql` instead of `schema.rb`.** `schema.rb` can't represent triggers, so a test
   or freshly created database would silently lose the append-only guarantee. The cost is
   needing the `sqlite3` CLI.
+- **Plans are immutable where it matters.** A plan's code, price, currency and interval are
+  read-only once created (assigning them raises). Changing the price of a plan in use would
+  silently change what current subscribers pay; repricing means creating a new plan and
+  archiving the old one.
+- **Credit is a ledger, the balance is a cache.** Customer credit only moves through
+  `CreditLedger`, which writes an append-only entry, updates the cached balance and audits
+  the movement in one transaction, with the customer row locked so two debits can't both
+  pass the balance check. Each reason can only move the balance in its own direction.
+- **Test cards by token, like Stripe test mode.** A payment method stores a token such as
+  `pm_card_chargeDeclinedInsufficientFunds`, and that token decides how the fake provider
+  answers a charge. Demo scenarios pick a card that will fail without any real card data.
 - **Money as integer cents.** Every amount is stored as `*_cents` integers with a `currency`
   column (always `USD`). Floats never touch money.
 - **One error shape, one list shape.** Every API error is
@@ -99,6 +110,18 @@ cd web && pnpm test:unit
 - Updating or deleting an audit row is refused by the database, even through raw SQL.
 - A business change and its audit row can't be split: recording an audit event outside a
   transaction raises, and rolling back the change rolls back the event.
+- Repricing a plan can't affect current subscribers: price and interval can't be changed
+  after creation (model and database rules), and archived plans keep working for existing
+  subscribers.
+- A card that has already expired is refused on attach. A card can also expire while a
+  subscription runs, because expiry is checked against the simulated clock.
+- Customer credit can never go negative (service check, model validation and a database
+  constraint), and a failed operation leaves the ledger and the cached balance untouched.
+- At most one default card per customer, enforced by a partial unique index; switching the
+  default unsets the old one first in the same transaction.
+- Emails are unique regardless of case or surrounding spaces.
+- Money typed by the operator is parsed digit by digit, never through floating point, and an
+  ambiguous comma (`12,5`) is rejected instead of guessed.
 
 ## Roadmap
 
@@ -109,7 +132,7 @@ agreed decision live in [`docs/00-prompt.md`](docs/00-prompt.md).
 |---|---|---|
 | 01 | [Foundation](docs/01-foundation.md) | Done |
 | 02 | [Audit log](docs/02-audit-log.md) | Done |
-| 03 | [Catalog and customers](docs/03-catalog-and-customers.md) | Planned |
+| 03 | [Catalog and customers](docs/03-catalog-and-customers.md) | Done |
 | 04 | [Subscription state machine](docs/04-subscription-state-machine.md) | Planned |
 | 05 | [Webhook ingestion and idempotency](docs/05-webhook-ingestion.md) | Planned |
 | 06 | [Fake payment provider](docs/06-fake-payment-provider.md) | Planned |

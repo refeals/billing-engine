@@ -41,9 +41,11 @@ billing flow reads.
 - Test cards follow Stripe test-mode convention: the provider token decides the behavior,
   e.g. `pm_card_visa` (succeeds), `pm_card_chargeDeclinedInsufficientFunds`,
   `pm_card_chargeDeclinedExpiredCard`, `pm_card_succeedsAfterFailures_2`.
-- `simulated_behavior` is stored for display only; it is derived from the token. The fake
-  provider (plan 06) reads the token, not our column, so provider behavior doesn't depend on
-  our database.
+- The token is stored as `test_card_token`; the behavior is derived from it for display (no
+  column). The fake provider (plan 06) receives the token as a call argument, so provider
+  behavior doesn't depend on reading our database.
+- Attaching a card whose expiry date has already passed is refused (422 `card_expired`), as
+  Stripe does.
 - `exp_month`, `exp_year`; `PaymentMethod#expired?(at: BillingClock.now)`. Because the clock
   moves, a card can expire in the middle of a subscription. That's a real edge case the demo
   can show.
@@ -51,14 +53,17 @@ billing flow reads.
   (`WHERE is_default = 1`).
 
 ### `credit_ledger_entries` (append-only, plan 02 mechanism)
-- Columns as in `00-prompt.md` §10.
+- Columns as in `00-prompt.md` §10, plus `balance_after_cents` (running balance), `note` and
+  `occurred_at`.
 - `CreditLedger.credit!(customer, amount_cents, reason:, ...)` and `debit!` are the only
   write path. `debit!` refuses to take the balance below zero.
 - Every entry writes a `billing_events` row (`credit.granted` / `credit.applied`).
 
 ### Endpoints
 As in `00-prompt.md` §9, **Plans** and **Customers**, except `GET /customers/:id/notifications`
-(plan 10).
+(plan 10). Additions: `make_default` for payment methods, a manual credit adjustment
+(`POST /customers/:id/credit_ledger_entries`, so the ledger is demonstrable before plan 08)
+and `GET /simulator/test_cards`.
 
 ## Frontend
 

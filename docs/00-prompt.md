@@ -190,8 +190,8 @@ idempotency key reused with a different payload, 404 as usual. State-changing PO
 an `Idempotency-Key` header.
 
 ### Plans
-- `GET /plans` — list plans.
-  Response: `[{ "id": 1, "code": "pro_monthly", "name": "Pro", "amount_cents": 19900, "currency": "USD", "interval": "month", "trial_days": 7, "active": true }]`
+- `GET /plans?include_archived=` — list plans (active only by default).
+  Response item: `{ "id": 1, "code": "pro_monthly", "name": "Pro", "amount_cents": 19900, "currency": "USD", "interval": "month", "trial_days": 7, "active": true, "archived_at": null }`
 - `GET /plans/:id`
 - `POST /plans` — create a plan.
   Request: `{ "code": "pro_monthly", "name": "Pro", "amount_cents": 19900, "interval": "month", "trial_days": 7 }`
@@ -199,13 +199,19 @@ an `Idempotency-Key` header.
 
 ### Customers
 - `GET /customers?q=`
-- `GET /customers/:id` — includes `credit_balance_cents`, `payment_methods`, `subscriptions`.
+- `GET /customers/:id` — includes `credit_balance_cents` and `payment_methods`
+  (`subscriptions` added in plan 04).
 - `POST /customers`
   Request: `{ "name": "Studio Flow", "email": "owner@studioflow.test" }`
-- `POST /customers/:id/payment_methods` — attach a test card.
-  Request: `{ "test_card": "declines_insufficient_funds", "exp_month": 12, "exp_year": 2027, "default": true }`
+- `POST /customers/:id/payment_methods` — attach a test card. 422 `card_expired` if the
+  expiry date has already passed (simulated time).
+  Request: `{ "test_card": "pm_card_chargeDeclinedInsufficientFunds", "exp_month": 12, "exp_year": 2027, "default": true }`
+- `POST /customers/:id/payment_methods/:pm_id/make_default`
 - `GET /customers/:id/credit_ledger_entries`
-  Response: `[{ "amount_cents": 5000, "reason": "downgrade_proration", "invoice_id": 12, "created_at": "..." }]`
+  Response item: `{ "amount_cents": 5000, "balance_after_cents": 5000, "reason": "downgrade_proration", "invoice_id": 12, "note": null, "occurred_at": "..." }`
+- `POST /customers/:id/credit_ledger_entries` — manual adjustment by the operator.
+  Request: `{ "amount_cents": -2500, "note": "Correction" }`. 422 `insufficient_credit` if the
+  balance would go below zero.
 - `GET /customers/:id/notifications`
 
 ### Subscriptions
@@ -285,6 +291,7 @@ an `Idempotency-Key` header.
 
 ### Simulator (fake Stripe; mounted only when `SIMULATOR_ENABLED`)
 - `GET /simulator/clock` — Response: `{ "now": "2026-10-01T00:00:00Z" }`
+- `GET /simulator/test_cards` — the test card catalog (token, brand, last4, behavior).
 - `POST /simulator/clock/advance` — Request: `{ "days": 3 }`
   Response: `{ "now": "...", "tick_report": { "renewals": 5, "trials_ended": 1, "dunning_steps_executed": 2, "events_emitted": 9 } }`
 - `POST /simulator/clock/reset`
@@ -309,6 +316,7 @@ someone calls `update_column`.
 **plans**
 - `code` (unique), `name`, `amount_cents`, `currency`, `interval` (month/year), `trial_days`,
   `archived_at`
+- `code`, `amount_cents`, `currency` and `interval` are read-only after create.
 
 **customers**
 - `name`, `email` (unique), `provider_customer_id` (unique, `cus_...`)
@@ -316,16 +324,19 @@ someone calls `update_column`.
 
 **payment_methods**
 - `customer_id`, `provider_payment_method_id` (unique), `brand`, `last4`, `exp_month`, `exp_year`
-- `simulated_behavior`: `succeeds` / `declines_insufficient_funds` / `expired_card` /
-  `succeeds_after_failures:N` — display only, derived from the test card token
-  (e.g. `pm_card_chargeDeclinedInsufficientFunds`, Stripe test-mode convention). The fake
-  provider decides outcomes from the token, never from this column.
-- `is_default`
+- `test_card_token` — Stripe test-mode token (e.g. `pm_card_chargeDeclinedInsufficientFunds`).
+  The behavior (`succeeds` / `card_declined` / `insufficient_funds` / `expired_card` /
+  `succeeds_after_failures`) is derived from it for display; no column stores it. The fake
+  provider receives the token as a call argument and decides outcomes from it.
+- `is_default` — at most one per customer (partial unique index).
 
 **credit_ledger_entries** (append-only)
-- `customer_id`, `amount_cents` (+ credit / − debit)
+- `customer_id`, `amount_cents` (+ credit / − debit, never 0)
+- `balance_after_cents` — running balance after the entry, never negative
 - `reason`: `downgrade_proration` / `applied_to_invoice` / `refund_to_balance` / `manual_adjustment`
-- `invoice_id` (nullable), `plan_change_id` (nullable)
+  (each reason only moves the balance in its own direction; manual adjustments go both ways)
+- `invoice_id` (nullable), `plan_change_id` (nullable), `note`
+- `occurred_at` (simulated time)
 
 ### Subscription
 

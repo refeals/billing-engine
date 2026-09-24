@@ -35,12 +35,13 @@ retrofitting auditing onto existing code is where gaps appear.
 ### Table `billing_events`
 - `subject_type`, `subject_id` (polymorphic, nullable): what the event is about. Many events
   concern records that are neither a subscription nor a customer (plans, invoices, the clock).
-- `subscription_id` (nullable, no FK yet — added in plan 04), `customer_id` (nullable, FK in
-  plan 03). Denormalized from the subject via `ApplicationRecord#audit_references`, so the
+- `subscription_id` (nullable), `customer_id` (nullable). No foreign keys, on purpose: the
+  audit trail is history and references rows by id, and adding a foreign key in SQLite
+  rebuilds the table, which would drop its append-only triggers. Denormalized from the subject via `ApplicationRecord#audit_references`, so the
   timelines are one indexed query.
 - `event_type` (string, indexed)
 - `actor_type`: `webhook` / `admin` / `system_job` / `reconciliation`
-- `webhook_event_id` (nullable, FK added in plan 05)
+- `webhook_event_id` (nullable, no foreign key for the same reason)
 - `data` (json: `before`, `after`, plus free context)
 - `occurred_at` (simulated time, from `BillingClock`), `created_at` (real time)
 - Indexes: (`subscription_id`, `occurred_at`), (`customer_id`, `occurred_at`), `event_type`,
