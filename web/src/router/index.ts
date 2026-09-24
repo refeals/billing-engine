@@ -9,6 +9,12 @@ const router = createRouter({
       component: () => import('@/features/dashboard/DashboardView.vue'),
       meta: { title: 'Dashboard' },
     },
+    {
+      path: '/audit',
+      name: 'audit-log',
+      component: () => import('@/features/audit/AuditLogView.vue'),
+      meta: { title: 'Audit log' },
+    },
   ],
 })
 

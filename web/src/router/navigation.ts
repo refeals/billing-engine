@@ -31,7 +31,7 @@ export const navigation: NavigationGroup[] = [
     items: [
       { label: 'Dunning', to: '/dunning', plan: '10', enabled: false },
       { label: 'Reconciliation', to: '/reconciliation', plan: '11', enabled: false },
-      { label: 'Audit log', to: '/audit', plan: '02', enabled: false },
+      { label: 'Audit log', to: '/audit', plan: '02', enabled: true },
     ],
   },
   {
