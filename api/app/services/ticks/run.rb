@@ -3,7 +3,14 @@ module Ticks
   # classes to STEPS; the order is explicit because steps depend on each other (e.g.
   # renewals must run before dunning looks for failed invoices).
   class Run
-    STEPS = [].freeze
+    STEPS = [
+      # Before trial conversion: a trial scheduled to cancel must end, not convert.
+      Ticks::CancelAtPeriodEnd,
+      Ticks::EndTrials,
+      Ticks::ResumePaused,
+      # Last: a subscription resumed today with an old period gets current dates.
+      Ticks::RenewPeriods
+    ].freeze
 
     # Each step responds to `.call(at:)` and returns a hash of counters for the tick report.
     def self.call(at:, steps: STEPS)

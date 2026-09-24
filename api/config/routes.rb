@@ -10,6 +10,16 @@ Rails.application.routes.draw do
         post :archive, on: :member
       end
 
+      resources :subscriptions, only: %i[index show create] do
+        member do
+          post :cancel
+          post :undo_cancel
+          post :pause
+          post :resume
+          get :state_transitions
+        end
+      end
+
       resources :customers, only: %i[index show create] do
         resources :payment_methods, only: :create do
           post :make_default, on: :member

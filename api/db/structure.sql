@@ -44,7 +44,43 @@ BEFORE DELETE ON credit_ledger_entries
 BEGIN
   SELECT RAISE(ABORT, 'credit_ledger_entries is append-only');
 END;
+CREATE TABLE IF NOT EXISTS "subscriptions" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "customer_id" integer NOT NULL, "plan_id" integer NOT NULL, "provider_subscription_id" varchar NOT NULL, "status" varchar NOT NULL, "current_period_start" datetime(6) NOT NULL, "current_period_end" datetime(6) NOT NULL, "trial_ends_at" datetime(6), "cancel_at_period_end" boolean DEFAULT FALSE NOT NULL, "canceled_at" datetime(6), "cancellation_reason" varchar, "paused_at" datetime(6), "resumes_at" datetime(6), "access_suspended_at" datetime(6), "last_provider_event_at" datetime(6), "lock_version" integer DEFAULT 0 NOT NULL, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL, CONSTRAINT "fk_rails_63d3df128b"
+FOREIGN KEY ("plan_id")
+  REFERENCES "plans" ("id")
+, CONSTRAINT "fk_rails_66eb6b32c1"
+FOREIGN KEY ("customer_id")
+  REFERENCES "customers" ("id")
+, CONSTRAINT subscriptions_status_known CHECK (status IN ('trialing', 'active', 'past_due', 'paused', 'canceled')));
+CREATE INDEX "index_subscriptions_on_plan_id" ON "subscriptions" ("plan_id");
+CREATE UNIQUE INDEX "index_subscriptions_on_provider_subscription_id" ON "subscriptions" ("provider_subscription_id");
+CREATE INDEX "index_subscriptions_on_status" ON "subscriptions" ("status");
+CREATE INDEX "index_subscriptions_on_current_period_end" ON "subscriptions" ("current_period_end");
+CREATE INDEX "index_subscriptions_on_customer_id" ON "subscriptions" ("customer_id");
+CREATE UNIQUE INDEX "index_subscriptions_one_live_per_customer" ON "subscriptions" ("customer_id") WHERE status <> 'canceled';
+CREATE TABLE IF NOT EXISTS "subscription_state_transitions" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "subscription_id" integer NOT NULL, "from_status" varchar, "to_status" varchar NOT NULL, "reason" varchar NOT NULL, "actor_type" varchar NOT NULL, "webhook_event_id" integer, "billing_event_id" integer NOT NULL, "metadata" json DEFAULT '{}' NOT NULL, "occurred_at" datetime(6) NOT NULL, "created_at" datetime(6) NOT NULL, CONSTRAINT "fk_rails_45cf9f3d0e"
+FOREIGN KEY ("subscription_id")
+  REFERENCES "subscriptions" ("id")
+, CONSTRAINT "fk_rails_d48954816d"
+FOREIGN KEY ("billing_event_id")
+  REFERENCES "billing_events" ("id")
+);
+CREATE INDEX "idx_on_subscription_id_occurred_at_70bdbb273b" ON "subscription_state_transitions" ("subscription_id", "occurred_at");
+CREATE TRIGGER subscription_state_transitions_no_update
+BEFORE UPDATE ON subscription_state_transitions
+BEGIN
+  SELECT RAISE(ABORT, 'subscription_state_transitions is append-only');
+END;
+CREATE TRIGGER subscription_state_transitions_no_delete
+BEFORE DELETE ON subscription_state_transitions
+BEGIN
+  SELECT RAISE(ABORT, 'subscription_state_transitions is append-only');
+END;
+CREATE TABLE IF NOT EXISTS "idempotency_keys" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "key" varchar NOT NULL, "request_fingerprint" varchar NOT NULL, "response_status" integer, "response_body" text, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL);
+CREATE UNIQUE INDEX "index_idempotency_keys_on_key" ON "idempotency_keys" ("key");
 INSERT INTO "schema_migrations" (version) VALUES
+('20260924193755'),
+('20260924193753'),
+('20260924193751'),
 ('20260924192040'),
 ('20260924192038'),
 ('20260924192036'),

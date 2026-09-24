@@ -16,6 +16,21 @@ class CustomerSerializer
     return summary unless @detail
 
     now = BillingClock.now
-    summary.merge(payment_methods: @customer.payment_methods.map { |card| PaymentMethodSerializer.new(card, at: now).as_json })
+    summary.merge(
+      payment_methods: @customer.payment_methods.map { |card| PaymentMethodSerializer.new(card, at: now).as_json },
+      subscriptions: @customer.subscriptions.includes(:plan).map { |subscription| subscription_summary(subscription) }
+    )
+  end
+
+  private
+
+  def subscription_summary(subscription)
+    {
+      id: subscription.id,
+      status: subscription.status,
+      plan: subscription.plan.slice(:id, :name, :code),
+      current_period_end: subscription.current_period_end.iso8601,
+      cancel_at_period_end: subscription.cancel_at_period_end
+    }
   end
 end
