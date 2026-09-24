@@ -7,6 +7,8 @@ RSpec.describe BillingClock do
 
   around { |example| travel_to(real_now) { example.run } }
 
+  before { Current.actor = "admin" }
+
   describe ".now" do
     it "starts at real time the first time it is read" do
       expect { described_class.now }.to change(SimulationClock, :count).from(0).to(1)
@@ -60,11 +62,33 @@ RSpec.describe BillingClock do
       end
     end
 
+    it "records one audit event per simulated day" do
+      described_class.advance!(days: 2)
+
+      events = BillingEvent.of_type("clock.day_advanced").order(:id)
+      expect(events.map(&:occurred_at)).to eq([ real_now + 1.day, real_now + 2.days ])
+      expect(events.map(&:actor_type)).to all(eq("admin"))
+      expect(events.first.data).to eq(
+        "before" => { "now" => real_now.iso8601 }, "after" => { "now" => (real_now + 1.day).iso8601 }
+      )
+    end
+
+    it "runs tick steps as the system, whoever moved the clock" do
+      actors = []
+      allow(Ticks::Run).to receive(:call) { actors << Current.actor and {} }
+
+      described_class.advance!(days: 1)
+
+      expect(actors).to eq([ "system_job" ])
+      expect(Current.actor).to eq("admin")
+    end
+
     it "rolls the day back when a tick step fails" do
       allow(Ticks::Run).to receive(:call).and_raise("step failed")
 
       expect { described_class.advance!(days: 1) }.to raise_error("step failed")
       expect(described_class.now).to eq(real_now)
+      expect(BillingEvent.count).to eq(0)
     end
   end
 
@@ -74,6 +98,16 @@ RSpec.describe BillingClock do
 
       expect(described_class.reset!).to eq(real_now)
       expect(described_class.now).to eq(real_now)
+    end
+
+    it "records the reset in the audit log" do
+      described_class.advance!(days: 5)
+      described_class.reset!
+
+      event = BillingEvent.of_type("clock.reset").sole
+      expect(event.data).to eq(
+        "before" => { "now" => (real_now + 5.days).iso8601 }, "after" => { "now" => real_now.iso8601 }
+      )
     end
   end
 

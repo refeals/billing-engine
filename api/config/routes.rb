@@ -4,6 +4,8 @@ Rails.application.routes.draw do
 
   namespace :api do
     namespace :v1 do
+      resources :billing_events, only: :index
+
       if Rails.configuration.x.simulator_enabled
         namespace :simulator do
           resource :clock, only: :show do

@@ -18,8 +18,14 @@ module BillingClock
       days.times do
         ActiveRecord::Base.transaction do
           current = clock
-          current.update!(current_time: current.current_time + 1.day)
-          Ticks::Run.call(at: current.current_time).each { |counter, value| tick_report[counter] += value }
+          before = current.current_time
+          current.update!(current_time: before + 1.day)
+          Audit.record(event_type: "clock.day_advanced", subject: current, before: { now: before.iso8601 }, after: { now: current.current_time.iso8601 })
+
+          # Whoever moved the clock, the work that falls due is done by the system.
+          Current.set(actor: "system_job") do
+            Ticks::Run.call(at: current.current_time).each { |counter, value| tick_report[counter] += value }
+          end
         end
       end
 
@@ -27,10 +33,14 @@ module BillingClock
     end
 
     def reset!
-      current = clock
-      current.rewind_allowed = true
-      current.update!(current_time: real_time)
-      current.current_time
+      ActiveRecord::Base.transaction do
+        current = clock
+        before = current.current_time
+        current.rewind_allowed = true
+        current.update!(current_time: real_time)
+        Audit.record(event_type: "clock.reset", subject: current, before: { now: before.iso8601 }, after: { now: current.current_time.iso8601 })
+        current.current_time
+      end
     end
 
     private

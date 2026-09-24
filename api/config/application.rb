@@ -19,10 +19,15 @@ module Api
     # not contain `.rb` files, or that should not be reloaded or eager loaded.
     # Common ones are `templates`, `generators`, or `middleware`, for example.
     # `rubocop` holds custom cops loaded by RuboCop itself, not by the app.
-    config.autoload_lib(ignore: %w[assets tasks rubocop])
+    # `database` holds migration helpers, required explicitly by an initializer.
+    config.autoload_lib(ignore: %w[assets tasks rubocop database])
 
     config.api_only = true
     config.time_zone = "UTC"
+
+    # Append-only tables are protected by SQLite triggers, which schema.rb can't express.
+    # structure.sql keeps them, so test and fresh databases get the same guarantees.
+    config.active_record.schema_format = :sql
 
     config.generators do |generate|
       generate.test_framework :rspec
