@@ -313,7 +313,8 @@ an `Idempotency-Key` header.
 
 ### Dashboard
 - `GET /dashboard/summary`
-  Response: `{ "by_status": { "active": 30, "past_due": 4 }, "mrr_cents": 597000, "open_discrepancies": 2, "open_dunning_cases": 4, "recent_events": [] }`
+  Response: `{ "simulated_now": "...", "subscriptions_by_status": { "trialing": 2, "active": 12, "past_due": 3, "paused": 1, "canceled": 2 }, "mrr_cents": 89517, "paying_subscriptions": 15, "dunning": { "open_cases": 3, "amount_at_risk_cents": 17700, "by_step": { "day_0_notice": 1 } }, "open_discrepancies": 0, "recent_events": [] }`
+  (every status key always present; `recent_events` = the 10 newest audit events)
 
 ### Simulator (fake Stripe; mounted only when `SIMULATOR_ENABLED`)
 - `GET /simulator/clock` — Response: `{ "now": "2026-10-01T00:00:00Z" }`

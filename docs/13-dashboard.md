@@ -48,6 +48,20 @@ A home screen that summarizes billing health and points to where attention is ne
 
 - README: MRR definition.
 
+## Decisions taken during implementation
+
+- **MRR**: `active` + `past_due` at the current plan's price; yearly ÷ 12 rounded half-up
+  per subscription (two $590/yr subscriptions = 2 × $49.17, not $98.33). Cancel-at-period-end
+  included; trialing, paused and canceled excluded; scheduled changes count once applied;
+  credit and refunds don't reduce it.
+- **Amount at risk** sums every open invoice of the subscriptions with an open dunning case,
+  not only the invoice that opened the case: a subscription keeps one case while a second
+  invoice (an upgrade's proration) can fail too.
+- Every status is present in `subscriptions_by_status`, zero-filled, so the UI never guesses.
+- The endpoint is a regular admin endpoint (not simulator-only). Plain queries, no cache.
+- The seeded demo gives MRR $895.17 from 15 paying subscriptions, asserted in the seed spec.
+- The MRR tile links to the unfiltered subscription list, since MRR spans two statuses.
+
 ## Acceptance criteria
 
 - Running `full_dunning` and advancing the clock visibly changes the past-due tile and MRR.

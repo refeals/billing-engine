@@ -99,6 +99,25 @@ zero discrepancies.
 `{"confirm": "reset"}`) deletes everything, including the append-only history, and runs the
 seeds again. It is the only path in the app that removes history.
 
+## Dashboard and MRR
+
+The home screen summarizes billing health as of the simulated date and refreshes whenever
+time moves (clock, scenario or reset). Every tile links to the list behind it.
+
+**MRR** (monthly recurring revenue), since definitions vary:
+
+- Counts `active` and `past_due` subscriptions, at the price of the plan each is on now.
+  `past_due` revenue is at risk, not lost yet; a subscription set to cancel at period end
+  still pays until then.
+- Leaves out `trialing` (not paying yet), `paused` (not billed) and `canceled`.
+- A yearly plan counts as its price ÷ 12, rounded to the cent **per subscription** ($590/yr
+  → $49.17), so MRR is always the sum of what each subscription contributes.
+- A scheduled plan change counts once it is applied. Credit and refunds don't reduce MRR:
+  it measures what is contracted, not what was collected.
+
+**Amount at risk**: what the subscriptions in dunning still owe, over all their open
+invoices.
+
 ## Subscription lifecycle
 
 ```mermaid
@@ -531,6 +550,7 @@ Deliberately out of scope for now:
 - A hash chain on the audit log, so tampering outside the application is detectable.
 - Proration when switching between monthly and yearly billing.
 - Authentication and multiple operators; multiple currencies.
+- History charts on the dashboard (MRR over time, churn).
 
 ## Roadmap
 
@@ -551,7 +571,7 @@ agreed decision live in [`docs/00-prompt.md`](docs/00-prompt.md).
 | 10 | [Dunning](docs/10-dunning.md) | Done |
 | 11 | [Reconciliation](docs/11-reconciliation.md) | Done |
 | 12 | [Scenario Lab and seeds](docs/12-scenario-lab-and-seeds.md) | Done |
-| 13 | [Dashboard](docs/13-dashboard.md) | Planned |
+| 13 | [Dashboard](docs/13-dashboard.md) | Done |
 | 14 | [Documentation and release](docs/14-documentation-and-release.md) | Planned |
 
 ## Project structure
