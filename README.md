@@ -688,6 +688,12 @@ docs/                       the brief, one plan per feature, architecture.md, sc
 bin/                        setup and dev scripts for both apps
 ```
 
+## Learning guides
+
+[LEARN-API.md](LEARN-API.md) and [LEARN-WEB.md](LEARN-WEB.md) walk through the codebase for
+someone coming from React: how each app works, the Ruby/Rails and Vue concepts it uses,
+parallels with React and Node, and exercises on this code.
+
 ## How it was built
 
 The project was planned before it was coded: [`docs/00-prompt.md`](docs/00-prompt.md) holds
