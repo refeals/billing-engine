@@ -1,163 +1,209 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, useTemplateRef, watch } from 'vue'
 
 import { toApiError } from '@/api/errors'
 import {
-  DELIVERY_STATUSES,
-  deliverProviderEvent,
-  fetchProviderEvents,
-  type ProviderEvent,
-} from '@/api/simulatorEvents'
+  fetchScenarioRuns,
+  fetchScenarios,
+  resetDemoData,
+  runScenario,
+  type DemoSummary,
+  type ScenarioRun,
+} from '@/api/scenarios'
+import BaseBadge from '@/components/BaseBadge.vue'
 import BaseButton from '@/components/BaseButton.vue'
-import EmptyState from '@/components/EmptyState.vue'
+import ConfirmDialog from '@/components/ConfirmDialog.vue'
 import PaginationNav from '@/components/PaginationNav.vue'
 import { useAsyncData } from '@/composables/useAsyncData'
-import { useClockRefresh } from '@/composables/useClockRefresh'
-import { formatDateTime } from '@/utils/format'
-import { humanize } from '@/utils/text'
-import DeliveryStatusBadge from './DeliveryStatusBadge.vue'
+import { useClockStore } from '@/stores/clock'
+import { formatDate } from '@/utils/format'
 import EmitEventForm from './EmitEventForm.vue'
+import ProviderOutbox from './ProviderOutbox.vue'
+import ScenarioRunPanel from './ScenarioRunPanel.vue'
 
-const statusFilter = ref('')
-const page = ref(1)
+const clock = useClockStore()
 
-const { data, error, loading, reload } = useAsyncData(() =>
-  fetchProviderEvents({ delivery_status: statusFilter.value, page: page.value }),
-)
-const events = computed(() => data.value?.data ?? [])
+const scenarios = useAsyncData(fetchScenarios)
+scenarios.reload()
 
-useClockRefresh(reload)
-watch(page, reload)
-watch(statusFilter, () => {
-  page.value = 1
-  reload()
-})
+const runsPage = ref(1)
+const runs = useAsyncData(() => fetchScenarioRuns({ page: runsPage.value }))
+runs.reload()
+watch(runsPage, runs.reload)
 
-const deliveringId = ref<number | null>(null)
-const actionError = ref<string | null>(null)
+const selectedRun = ref<ScenarioRun | null>(null)
+const runningKey = ref<string | null>(null)
+const runError = ref<string | null>(null)
+// One action at a time: every scenario and the reset move the same clock.
+const busy = computed(() => runningKey.value !== null || resetPending.value)
 
-async function deliver(event: ProviderEvent) {
-  deliveringId.value = event.id
-  actionError.value = null
+async function run(key: string) {
+  runningKey.value = key
+  runError.value = null
   try {
-    await deliverProviderEvent(event.id)
-    await reload()
+    selectedRun.value = await runScenario(key)
   } catch (caught) {
-    actionError.value = toApiError(caught).message
+    runError.value = toApiError(caught).message
   } finally {
-    deliveringId.value = null
+    // Even a failed request may have moved the clock before it broke.
+    runsPage.value = 1
+    await Promise.all([runs.reload(), clock.timeMoved()])
+    runningKey.value = null
   }
 }
 
-function onEmitted() {
-  page.value = 1
-  reload()
+const resetOpen = ref(false)
+const resetPending = ref(false)
+const resetError = ref<string | null>(null)
+const resetSummary = ref<DemoSummary | null>(null)
+
+async function reset() {
+  resetPending.value = true
+  resetError.value = null
+  try {
+    resetSummary.value = await resetDemoData()
+    resetOpen.value = false
+    selectedRun.value = null
+  } catch (caught) {
+    resetError.value = toApiError(caught).message
+  } finally {
+    // The wipe commits before seeding starts, so a failure can still have changed everything.
+    runsPage.value = 1
+    await Promise.all([runs.reload(), clock.timeMoved()])
+    resetPending.value = false
+  }
 }
+
+const outbox = useTemplateRef('outbox')
 </script>
 
 <template>
-  <div class="space-y-6">
-    <EmitEventForm @emitted="onEmitted" />
+  <div class="space-y-8">
+    <p class="rounded-lg border border-status-past-due/30 bg-status-past-due/5 p-3 text-sm text-ink-muted">
+      Scenarios run the real services against the <strong>shared</strong> simulated clock: while
+      one advances time, every other subscription renews, retries and expires too. Each run
+      creates its own customer, so runs never interfere with each other's checks.
+    </p>
 
     <section class="space-y-3">
-      <div class="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 class="text-sm font-semibold">Provider outbox</h2>
-          <p class="text-sm text-ink-muted">
-            Everything the fake Stripe emitted, delivered or not. It never reads the engine's
-            tables, so it is an independent record of what the provider believes.
-          </p>
-        </div>
-        <select
-          v-model="statusFilter"
-          aria-label="Filter by delivery status"
-          class="rounded-md border border-border bg-surface px-2 py-1.5 text-sm"
-        >
-          <option value="">All deliveries</option>
-          <option v-for="status in DELIVERY_STATUSES" :key="status" :value="status">
-            {{ humanize(status) }}
-          </option>
-        </select>
-      </div>
-
-      <p v-if="error || actionError" class="text-sm text-danger" role="alert">
-        {{ actionError ?? error?.message }}
+      <h2 class="text-sm font-semibold">Scenarios</h2>
+      <p v-if="scenarios.error.value" class="text-sm text-danger" role="alert">
+        {{ scenarios.error.value.message }}
       </p>
+      <p v-if="runError" class="text-sm text-danger" role="alert">{{ runError }}</p>
+      <ul class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        <li
+          v-for="scenario in scenarios.data.value?.data ?? []"
+          :key="scenario.key"
+          class="flex flex-col justify-between gap-3 rounded-lg border border-border bg-surface p-4"
+        >
+          <div class="space-y-1">
+            <h3 class="text-sm font-semibold">{{ scenario.title }}</h3>
+            <p class="text-sm text-ink-muted">{{ scenario.description }}</p>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <code class="text-xs text-ink-faint">{{ scenario.key }}</code>
+            <BaseButton variant="primary" :disabled="busy" @click="run(scenario.key)">
+              {{ runningKey === scenario.key ? 'Running…' : 'Run' }}
+            </BaseButton>
+          </div>
+        </li>
+      </ul>
+    </section>
 
-      <div class="overflow-x-auto rounded-lg border border-border bg-surface" :aria-busy="loading">
-        <table v-if="events.length > 0" class="w-full text-sm">
-          <thead class="border-b border-border text-left text-xs text-ink-faint">
-            <tr>
-              <th class="px-4 py-2 font-medium">Event</th>
-              <th class="px-4 py-2 font-medium">Delivery</th>
-              <th class="px-4 py-2 font-medium">Inbox result</th>
-              <th class="px-4 py-2 font-medium">Emitted</th>
-              <th class="px-4 py-2"><span class="sr-only">Actions</span></th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr
-              v-for="event in events"
-              :key="event.id"
-              class="border-b border-border last:border-b-0"
-            >
-              <td class="px-4 py-3">
-                <p class="font-mono text-sm">{{ event.event_type }}</p>
-                <p class="font-mono text-xs text-ink-faint">
-                  {{ event.event_id }} · {{ event.provider_object_id }}
-                </p>
-              </td>
-              <td class="px-4 py-3">
-                <div class="flex flex-wrap items-center gap-2">
-                  <DeliveryStatusBadge :status="event.delivery_status" />
-                  <span v-if="event.delivery_count > 0" class="text-xs text-ink-muted">
-                    sent {{ event.delivery_count }}×
-                  </span>
-                </div>
-              </td>
-              <td class="px-4 py-3">
-                <RouterLink
-                  v-if="event.webhook_event_id"
-                  :to="{ name: 'webhook-event', params: { id: event.webhook_event_id } }"
-                  class="text-accent hover:text-accent-strong"
-                >
-                  {{ humanize(event.last_delivery_result ?? 'delivered') }} →
-                </RouterLink>
-                <span v-else class="text-ink-faint">
-                  {{ event.last_delivery_result ? humanize(event.last_delivery_result) : '—' }}
-                </span>
-              </td>
-              <td class="px-4 py-3 text-ink-muted">
-                {{ formatDateTime(event.provider_created_at) }}
-              </td>
-              <td class="px-4 py-3 text-right">
-                <BaseButton
-                  v-if="event.delivery_status !== 'pending'"
-                  variant="ghost"
-                  :disabled="deliveringId === event.id"
-                  @click="deliver(event)"
-                >
-                  {{ event.delivery_status === 'dropped' ? 'Deliver now' : 'Redeliver' }}
-                </BaseButton>
-              </td>
-            </tr>
-          </tbody>
-        </table>
+    <ScenarioRunPanel v-if="selectedRun" :key="selectedRun.id" :run="selectedRun" />
 
-        <EmptyState
-          v-else-if="!loading && !error"
-          title="The provider hasn't emitted anything yet"
-          description="Creating customers, cards and subscriptions makes it report them."
-        />
-      </div>
-
+    <section class="space-y-3">
+      <h2 class="text-sm font-semibold">Recent runs</h2>
+      <p v-if="runs.error.value" class="text-sm text-danger" role="alert">
+        {{ runs.error.value.message }}
+      </p>
+      <p
+        v-else-if="runs.data.value && runs.data.value.data.length === 0"
+        class="text-sm text-ink-muted"
+      >
+        No scenario has run yet.
+      </p>
+      <ul
+        v-else
+        class="divide-y divide-border rounded-lg border border-border bg-surface"
+        :aria-busy="runs.loading.value"
+      >
+        <li v-for="item in runs.data.value?.data ?? []" :key="item.id">
+          <button
+            type="button"
+            class="flex w-full flex-wrap items-center justify-between gap-2 px-4 py-2.5 text-left text-sm hover:bg-canvas"
+            :aria-pressed="selectedRun?.id === item.id"
+            @click="selectedRun = item"
+          >
+            <span>
+              {{ item.title }} <span class="text-xs text-ink-faint">#{{ item.id }}</span>
+            </span>
+            <span class="flex items-center gap-3">
+              <span class="text-xs text-ink-muted">{{ formatDate(item.started_at) }}</span>
+              <BaseBadge :tone="item.status === 'passed' ? 'success' : 'danger'">
+                {{ item.status }}
+              </BaseBadge>
+            </span>
+          </button>
+        </li>
+      </ul>
       <PaginationNav
-        v-if="data"
-        :meta="data.meta"
-        noun="events"
-        :disabled="loading"
-        @change="page = $event"
+        v-if="runs.data.value"
+        :meta="runs.data.value.meta"
+        noun="runs"
+        :disabled="runs.loading.value"
+        @change="runsPage = $event"
       />
     </section>
+
+    <details class="group space-y-6">
+      <summary class="cursor-pointer text-sm font-semibold">
+        Advanced: make the provider speak up, and the whole outbox
+      </summary>
+      <div class="mt-4 space-y-6">
+        <EmitEventForm @emitted="outbox?.showFirstPage()" />
+        <ProviderOutbox ref="outbox">
+          <template #heading>
+            <h2 class="text-sm font-semibold">Provider outbox</h2>
+            <p class="text-sm text-ink-muted">
+              Everything the fake Stripe emitted, delivered or not. It never reads the engine's
+              tables, so it is an independent record of what the provider believes.
+            </p>
+          </template>
+        </ProviderOutbox>
+      </div>
+    </details>
+
+    <section class="space-y-3 rounded-lg border border-danger/30 p-4">
+      <h2 class="text-sm font-semibold">Reset demo data</h2>
+      <p class="text-sm text-ink-muted">
+        Deletes everything, including the append-only history, and rebuilds the demo studios
+        from 2026-01-05 through about 70 simulated days.
+      </p>
+      <p v-if="resetSummary" class="text-sm text-status-active" role="status">
+        Demo rebuilt: {{ resetSummary.customers }} customers, clock at
+        {{ formatDate(resetSummary.simulated_now) }}, {{ resetSummary.open_discrepancies }} open
+        discrepancies.
+      </p>
+      <BaseButton variant="danger" :disabled="busy" @click="resetOpen = true">
+        Reset demo data
+      </BaseButton>
+    </section>
+
+    <ConfirmDialog
+      v-model:open="resetOpen"
+      title="Reset demo data?"
+      :confirm-label="resetPending ? 'Resetting…' : 'Delete everything and reseed'"
+      :pending="resetPending"
+      :error="resetError"
+      @confirm="reset"
+    >
+      <p>
+        Every customer, subscription, invoice, webhook and audit event is deleted, then the demo
+        is seeded again. This is the only path in the app that removes history.
+      </p>
+      <p>Rebuilding replays about 70 simulated days and takes around 15 seconds.</p>
+    </ConfirmDialog>
   </div>
 </template>

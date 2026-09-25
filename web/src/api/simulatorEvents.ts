@@ -38,7 +38,9 @@ export interface EmitEventInput {
   copies: number
 }
 
-export function fetchProviderEvents(options: { delivery_status?: string; page?: number } = {}) {
+export function fetchProviderEvents(
+  options: { delivery_status?: string; scenario_run_id?: number; page?: number } = {},
+) {
   return apiRequest<Paginated<ProviderEvent>>(`/simulator/events${toQueryString(options)}`)
 }
 

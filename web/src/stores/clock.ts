@@ -50,5 +50,12 @@ export const useClockStore = defineStore('clock', () => {
     revision.value += 1
   }
 
-  return { now, pending, error, lastAdvance, revision, load, advance, reset }
+  // Something other than the clock widget moved time (a scenario, a demo reset).
+  async function timeMoved() {
+    await load()
+    lastAdvance.value = null
+    revision.value += 1
+  }
+
+  return { now, pending, error, lastAdvance, revision, load, advance, reset, timeMoved }
 })

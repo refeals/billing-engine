@@ -42,3 +42,13 @@ describe('fetchProviderEvents', () => {
     expect(fetchMock.mock.calls[0]![0]).toMatch(/\/simulator\/events\?delivery_status=dropped$/)
   })
 })
+
+describe('fetchProviderEvents for a scenario run', () => {
+  it('narrows the outbox to the run', async () => {
+    const fetchMock = stubFetch()
+
+    await fetchProviderEvents({ scenario_run_id: 7, page: 2 })
+
+    expect(fetchMock.mock.calls[0]![0]).toMatch(/\/simulator\/events\?scenario_run_id=7&page=2$/)
+  })
+})

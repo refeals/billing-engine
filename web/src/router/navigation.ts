@@ -37,6 +37,6 @@ export const navigation: NavigationGroup[] = [
   },
   {
     label: 'Simulator',
-    items: [{ label: 'Scenario Lab', to: '/simulator', plan: '06', enabled: true }],
+    items: [{ label: 'Scenario Lab', to: '/simulator', plan: '12', enabled: true }],
   },
 ]
