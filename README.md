@@ -187,9 +187,9 @@ sequenceDiagram
     Engine->>Engine: roll period, issue invoice (credit applied first), open
     Engine->>Provider: pay_invoice (default card)
     Provider-->>Inbox: charge.succeeded + invoice.paid
-    Inbox->>Engine: invoice paid; trialing → active, past_due → active
+    Inbox->>Engine: invoice paid: trialing → active, past_due → active
     Provider-->>Inbox: or charge.failed + invoice.payment_failed
-    Inbox->>Engine: attempt recorded; trialing/active → past_due
+    Inbox->>Engine: attempt recorded: trialing/active → past_due
 ```
 
 - A subscription created without a trial is billed at creation; a trial is billed when it
