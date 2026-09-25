@@ -220,6 +220,14 @@ Point two records at the VPS's public IP:
 Wait until `dig +short api.billing.rafaelsiqueira.dev` returns the IP; Let's Encrypt validation
 fails until it does.
 
+**With Cloudflare DNS, set both records to "DNS only" (grey cloud).** Cloudflare's free
+certificate covers `rafaelsiqueira.dev` and `*.rafaelsiqueira.dev`, one level deep, so it has
+no certificate for `api.billing.rafaelsiqueira.dev` and a proxied (orange) record fails the
+TLS handshake at Cloudflare's edge (`ERR_SSL_VERSION_OR_CIPHER_MISMATCH`), before the request
+ever reaches the VPS. With "DNS only", Traefik answers directly with its Let's Encrypt
+certificate. Keeping the proxy would need a one-level name (`billing-api.rafaelsiqueira.dev`)
+and SSL mode **Full (strict)**; "Flexible" loops with Traefik's HTTP→HTTPS redirect.
+
 ### 2. Connect GitHub
 
 Dokploy → **Settings → Git → GitHub** → create the GitHub App and install it on the
@@ -349,6 +357,7 @@ Accepted for a portfolio demo, and stated in the README next to the live link:
 | First deploy marked unhealthy | The seeds take about 15 seconds on first boot; retry, or raise the health check's start period |
 | `db:prepare` fails with `sqlite3: not found` | The image lost the `sqlite3` package (needed to load `structure.sql`) |
 | Certificate not issued | DNS not propagated yet, or ports 80/443 closed on the VPS firewall |
+| `ERR_SSL_VERSION_OR_CIPHER_MISMATCH` / `sslv3 alert handshake failure`, `server: cloudflare` | The record is proxied by Cloudflare and the name is two levels deep (`api.billing.…`); switch it to "DNS only" |
 
 ## Verification
 
