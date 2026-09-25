@@ -7,9 +7,10 @@ fitness studios. It is a portfolio project focused on one narrow, easy-to-get-wr
 The payment provider (Stripe) is simulated in-process and a simulated clock fast-forwards
 weeks of billing in seconds, so every hard case can be reproduced with one click.
 
-**Live demo: [billing.rafaelsiqueira.dev](https://billing.rafaelsiqueira.dev)** — no sign-in,
-fictional data. Every visitor shares the same simulated clock, so the data you see may
-have been moved by someone else's scenario.
+**Live demo: [billing.rafaelsiqueira.dev](https://billing.rafaelsiqueira.dev)** — sign in as
+`demo@billing-engine.dev` / `demo-billing-2026` (also shown on the login screen). Data is
+fictional, and every visitor shares the same simulated clock, so what you see may have been
+moved by someone else's scenario.
 
 **What to look at**
 
@@ -91,7 +92,8 @@ push) is described step by step in
 
 ## Try it
 
-Open the **Scenario Lab** (`/simulator`). Each card runs a short story against the real
+Sign in with the demo credentials shown on the login screen, then open the **Scenario Lab**
+(`/simulator`). Each card runs a short story against the real
 services and ends with checks; the result shows every step with its simulated date, links to
 what it created and the provider events it caused. Four worth running first:
 
@@ -451,8 +453,13 @@ Diagrams of the components, the main flows and the data model are in
   `{ "error": { "code", "message", "details" } }`, with 422 for business-rule violations, 409
   for concurrent-edit conflicts and 404 for missing records. Every list is
   `{ "data": [...], "meta": { "page", "per_page", "total_count", "total_pages" } }`.
-- **No authentication.** The app models a single back-office operator. Authentication is out
-  of scope for a project about billing correctness.
+- **A demo login done properly.** One demo user (credentials public on the login screen),
+  but a real flow: bcrypt password, a server-side `sessions` row per sign-in and only its
+  id in a signed, HttpOnly, `SameSite=Lax` cookie, so JavaScript never sees a credential
+  and signing out ends the session on the server. The web app and the API are different
+  origins of the same site, so the cookie travels with `credentials: "include"` and CORS
+  allows exactly one origin; JSON requests need a CORS preflight, so no CSRF token is
+  needed. Every endpoint except the provider's webhook requires the session.
 - **Lean Rails.** Only the frameworks in use are loaded (Active Record, Active Job, Action
   Controller). Deployment tooling was removed, since the project is meant to run locally.
 
@@ -497,6 +504,17 @@ key is given in brackets.
   same response. After a 4xx the frontend starts a new key, so fixing the input and submitting
   again is a new attempt, not a "reused key" error; after a network error it keeps the key
   ([subscriptions_spec.rb](api/spec/requests/api/v1/subscriptions_spec.rb), [idempotency.spec.ts](web/src/api/__tests__/idempotency.spec.ts)).
+- Every API endpoint except the provider's webhook refuses requests without a session, and
+  one spec walks every route to prove it, so a new controller can't be left open
+  ([authentication_coverage_spec.rb](api/spec/requests/api/v1/authentication_coverage_spec.rb)).
+- Sign-in answers the same for an unknown email and a wrong password (and takes the same
+  time), allows 10 attempts per 3 minutes per visitor (per real client IP behind
+  Cloudflare, not per edge), and signing out makes the old cookie useless; an expired
+  session sends any screen back to the login and returns there afterwards, only to
+  internal paths ([sessions_spec.rb](api/spec/requests/api/v1/sessions_spec.rb),
+  [redirect.spec.ts](web/src/router/__tests__/redirect.spec.ts)).
+- The nightly demo reset keeps the demo user and whoever is signed in
+  ([reset_spec.rb](api/spec/services/demo/reset_spec.rb)).
 - Money typed by the operator is parsed digit by digit, never through floating point, and an
   ambiguous comma (`12,5`) is rejected instead of guessed ([money.spec.ts](web/src/utils/__tests__/money.spec.ts)).
 
@@ -645,7 +663,8 @@ Deliberately left out; each is a clean extension point rather than a rewrite:
 - Proration when switching between monthly and yearly billing (refused today).
 - A hash chain on the audit log, so tampering outside the application is detectable.
 - History charts on the dashboard (MRR over time, churn).
-- Authentication and multiple operators; multiple currencies; taxes.
+- Real accounts: sign-up, password reset, several operators with roles; multiple
+  currencies; taxes.
 
 ## Project structure
 
@@ -692,3 +711,4 @@ built, reviewed and committed before the next.
 | 13 | [Dashboard](docs/13-dashboard.md) |
 | 14 | [Documentation and release](docs/14-documentation-and-release.md) |
 | 15 | [Deploy with Dokploy](docs/15-deploy-with-dokploy.md) |
+| 16 | [Demo login](docs/16-demo-login.md) |

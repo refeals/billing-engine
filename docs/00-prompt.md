@@ -74,7 +74,8 @@ Plan first, implement after review. Each phase waits for explicit approval befor
 - **Money as integer cents** (`*_cents`) plus a `currency` column. Never floats.
 - **Status is never edited directly.** There is no `PATCH status`. Every change goes through
   an explicit action (`cancel`, `pause`, …) or a webhook, validated by the state machine.
-- **No authentication.** Single back-office operator. Documented in the README as out of scope.
+- **No authentication** at first (single back-office operator); plan 16 later added a demo
+  login with one public user, to show a proper session flow.
 
 ## 6. Resolved decisions
 
@@ -311,6 +312,14 @@ an `Idempotency-Key` header.
   (`from` / `to` are inclusive `YYYY-MM-DD` dates on `occurred_at`).
   Response: `{ "data": [...], "meta": { "page", "per_page", "total_count", "total_pages", "event_types" } }`
 
+### Session (plan 16)
+- `POST /session` — Request: `{ "email", "password" }`. Response 201 `{ "user": { "id", "email", "name" } }`
+  and a signed, HttpOnly `session_id` cookie; 401 `invalid_credentials`; 429 `too_many_attempts`.
+- `GET /session` — the signed-in user, or 401.
+- `DELETE /session` — 204; the session row is deleted.
+- Every other endpoint answers 401 `unauthenticated` without a session, except
+  `POST /webhooks/stripe`.
+
 ### Dashboard
 - `GET /dashboard/summary`
   Response: `{ "simulated_now": "...", "subscriptions_by_status": { "trialing": 2, "active": 12, "past_due": 3, "paused": 1, "canceled": 2 }, "mrr_cents": 89517, "paying_subscriptions": 15, "dunning": { "open_cases": 3, "amount_at_risk_cents": 17700, "by_step": { "day_0_notice": 1 } }, "open_discrepancies": 0, "recent_events": [] }`
@@ -525,6 +534,11 @@ someone calls `update_column`.
   subscription, ordered by `provider_created_at`.
 
 **simulation_clock** (single row): `current_time`
+
+**users**: `email` (unique, normalized), `password_digest`, `name` — one demo user.
+
+**sessions**: `user_id`, `ip_address`, `user_agent`, `last_seen_at`, timestamps — one row per
+sign-in, deleted at sign-out; expires 7 days after creation (real time, not simulated).
 
 **scenario_runs**: `scenario_key`, `status` (`running` / `passed` / `failed`), `customer_id`,
 `subscription_id`, `log` (json: `step`, `detail`, `at`), `error`, `started_at`, `finished_at`

@@ -331,10 +331,10 @@ Where schedules aren't available, the same from the VPS's crontab:
 
 Accepted for a portfolio demo, and stated in the README next to the live link:
 
-- **No authentication.** Anyone can create customers, move the clock, run scenarios or
-  reset the data. Data is fictional and disposable, and the nightly reset restores it.
-  Putting Dokploy's basic auth (or Traefik's) in front of the web domain would block
-  recruiters too, so it isn't used.
+- **Public demo credentials.** Since plan 16 the app has a login, but its only user's
+  credentials are printed on the login screen, so anyone can still create customers, move
+  the clock, run scenarios or reset the data. Data is fictional and disposable, and the
+  nightly reset restores it (it keeps the demo user and open sessions).
 - **The webhook endpoint accepts unsigned events** while the simulator is on (by design, so
   the fake provider can deliver). Someone could post fabricated events; the worst outcome is
   a confusing demo until the next reset. Real signature verification is already listed as a
