@@ -24,7 +24,7 @@ Companion: [LEARN-API.md](LEARN-API.md) for the Rails side.
 12. [How the app boots and how login works](#12-how-the-app-boots-and-how-login-works)
 13. [Styling with Tailwind v4](#13-styling-with-tailwind-v4)
 14. [TypeScript with Vue](#14-typescript-with-vue)
-15. [Testing with Vitest and Vue Test Utils](#15-testing-with-vitest-and-vue-test-utils)
+15. [Testing with Vitest, Vue Test Utils and Playwright](#15-testing-with-vitest-vue-test-utils-and-playwright)
 16. [Tooling](#16-tooling)
 17. [Gotchas for React developers](#17-gotchas-for-react-developers)
 18. [Exercises](#18-exercises)
@@ -612,7 +612,7 @@ why `StatusBadge.vue` keeps a map of full class strings instead of building
   templates are type-checked too: a wrong prop in a template is a red squiggle.
 - Route meta is typed by augmenting vue-router's interface (end of `src/router/index.ts`).
 
-## 15. Testing with Vitest and Vue Test Utils
+## 15. Testing with Vitest, Vue Test Utils and Playwright
 
 Vitest is Jest-compatible (`describe`, `it`, `expect`, `vi.fn()` ≈ `jest.fn()`), and
 `@vue/test-utils` mounts components (≈ React Testing Library's `render`).
@@ -634,6 +634,27 @@ Most tests here are for plain functions, where the logic worth testing lives:
 - `src/router/__tests__/redirect.spec.ts` tests `safeRedirect` against open-redirect tricks.
 
 Run `pnpm test:unit` (watch mode) or `pnpm test:unit --run`.
+
+### End-to-end tests (Playwright)
+
+`web/e2e/` drives a real Chromium against the real API ([docs/17](docs/17-e2e-tests.md)).
+If you have used Playwright or Cypress with React, nothing changes: the tests don't know or
+care that the app is Vue, which is the point of testing through the browser.
+
+```ts
+// e2e/subscription-lifecycle.spec.ts
+await page.getByRole('button', { name: 'New customer' }).click()
+await page.getByLabel('Studio name').fill(name)
+await page.getByRole('button', { name: 'Create customer' }).click()
+await expect(page.getByRole('heading', { name })).toBeVisible()
+```
+
+- Locators (`getByRole`, `getByLabel`) find elements the way a user or a screen reader
+  would, which also checks that labels and roles are right.
+- `expect(...)` **retries** until it passes or times out, so there are no manual waits
+  after a click that triggers a request.
+- `pnpm test:e2e:ui` opens a UI to run one test, watch it, and step through each action
+  with a DOM snapshot.
 
 ## 16. Tooling
 

@@ -82,9 +82,16 @@ All optional; the defaults work for local development.
 ```sh
 cd api && bundle exec rspec && bin/rubocop && bin/brakeman   # includes all 10 scenarios
 cd web && pnpm lint && pnpm type-check && pnpm test:unit --run
+cd web && pnpm test:e2e      # both apps in a real browser (first time: pnpm exec playwright install chromium)
 ```
 
-CI (GitHub Actions) runs the same checks plus `bundler-audit` and a production build.
+The end-to-end suite (Playwright) starts the API and the web app itself, on their own ports
+and database, and walks through seven operator stories: sign-in, dashboard, clock, a
+subscription's lifecycle, a conflict between two tabs, a refund and the Scenario Lab
+([docs/17](docs/17-e2e-tests.md)).
+
+CI (GitHub Actions) runs the same checks plus `bundler-audit`, a production build and the
+end-to-end suite.
 
 ### Deploy
 
@@ -721,3 +728,4 @@ built, reviewed and committed before the next.
 | 14 | [Documentation and release](docs/14-documentation-and-release.md) |
 | 15 | [Deploy with Dokploy](docs/15-deploy-with-dokploy.md) |
 | 16 | [Demo login](docs/16-demo-login.md) |
+| 17 | [End-to-end tests](docs/17-e2e-tests.md) |
