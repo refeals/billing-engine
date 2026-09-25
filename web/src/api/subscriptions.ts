@@ -47,6 +47,7 @@ export interface Subscription {
   } | null
   scheduled_plan_change?: PlanChange | null
   open_dunning_case?: DunningCaseDetail | null
+  open_discrepancies_count?: number
   created_at: string
 }
 

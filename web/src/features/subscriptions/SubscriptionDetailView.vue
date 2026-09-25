@@ -173,6 +173,17 @@ const tomorrow = computed(() => {
             <div class="flex items-center gap-3">
               <h2 class="text-lg font-semibold">{{ subscription.plan.name }}</h2>
               <StatusBadge :status="subscription.status" />
+              <RouterLink
+                v-if="subscription.open_discrepancies_count"
+                :to="{ name: 'reconciliation', query: { subscription_id: subscription.id } }"
+              >
+                <BaseBadge tone="warning">
+                  {{ subscription.open_discrepancies_count }}
+                  {{
+                    subscription.open_discrepancies_count === 1 ? 'discrepancy' : 'discrepancies'
+                  }}
+                </BaseBadge>
+              </RouterLink>
             </div>
             <p class="text-sm text-ink-muted">
               {{ formatMoney(subscription.plan.amount_cents) }} / {{ subscription.plan.interval }} ·

@@ -64,6 +64,12 @@ const router = createRouter({
       meta: { title: 'Dunning' },
     },
     {
+      path: '/reconciliation',
+      name: 'reconciliation',
+      component: () => import('@/features/reconciliation/ReconciliationView.vue'),
+      meta: { title: 'Reconciliation' },
+    },
+    {
       path: '/webhooks',
       name: 'webhooks',
       component: () => import('@/features/webhooks/WebhookInboxView.vue'),

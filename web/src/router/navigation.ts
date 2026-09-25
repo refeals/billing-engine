@@ -30,7 +30,7 @@ export const navigation: NavigationGroup[] = [
     label: 'Operations',
     items: [
       { label: 'Dunning', to: '/dunning', plan: '10', enabled: true },
-      { label: 'Reconciliation', to: '/reconciliation', plan: '11', enabled: false },
+      { label: 'Reconciliation', to: '/reconciliation', plan: '11', enabled: true },
       { label: 'Webhook inbox', to: '/webhooks', plan: '05', enabled: true },
       { label: 'Audit log', to: '/audit', plan: '02', enabled: true },
     ],
