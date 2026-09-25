@@ -1,5 +1,6 @@
 import { apiRequest } from './client'
 import { idempotencyHeaders } from './idempotency'
+import type { DunningCaseDetail } from './dunning'
 import type { PlanChange } from './planChanges'
 import type { Plan } from './plans'
 import { toQueryString } from './query'
@@ -34,7 +35,8 @@ export interface Subscription {
   access_suspended: boolean
   lock_version: number
   allowed_actions: SubscriptionAction[]
-  default_payment_method: {
+  // Only on the subscription detail (they cost queries per row, so lists leave them out).
+  default_payment_method?: {
     id: number
     brand: string
     last4: string
@@ -43,7 +45,8 @@ export interface Subscription {
     expired: boolean
     behavior: string
   } | null
-  scheduled_plan_change: PlanChange | null
+  scheduled_plan_change?: PlanChange | null
+  open_dunning_case?: DunningCaseDetail | null
   created_at: string
 }
 

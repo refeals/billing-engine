@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
+import { fetchCustomerNotifications } from '@/api/dunning'
 import {
   fetchCreditLedger,
   fetchCustomer,
@@ -29,12 +30,14 @@ const ledgerPage = ref(1)
 
 const customerData = useAsyncData(() => fetchCustomer(customerId.value))
 const ledgerData = useAsyncData(() => fetchCreditLedger(customerId.value, ledgerPage.value))
+const notificationsData = useAsyncData(() => fetchCustomerNotifications(customerId.value))
 const customer = computed(() => customerData.data.value)
 const ledger = computed(() => ledgerData.data.value)
 
 function reloadAll() {
   customerData.reload()
   ledgerData.reload()
+  notificationsData.reload()
 }
 
 // Expired badges depend on the simulated date, so time moving means reloading.
@@ -222,6 +225,28 @@ function expiry(paymentMethod: PaymentMethod) {
           v-else
           title="No subscriptions yet"
           description="Subscribe this studio to a plan to start billing it."
+        />
+      </section>
+
+      <section class="rounded-lg border border-border bg-surface">
+        <h3 class="border-b border-border px-5 py-3 text-sm font-semibold">Notifications sent</h3>
+        <ul v-if="(notificationsData.data.value?.data.length ?? 0) > 0">
+          <li
+            v-for="notification in notificationsData.data.value?.data ?? []"
+            :key="notification.id"
+            class="border-b border-border px-5 py-3 last:border-b-0"
+          >
+            <div class="flex flex-wrap items-baseline justify-between gap-2">
+              <p class="text-sm font-medium">{{ notification.subject }}</p>
+              <p class="text-xs text-ink-faint">{{ formatDate(notification.sent_at) }}</p>
+            </div>
+            <p class="text-sm text-ink-muted">{{ notification.body }}</p>
+          </li>
+        </ul>
+        <EmptyState
+          v-else
+          title="Nothing sent yet"
+          description="Emails about failed payments would be listed here (none are actually sent)."
         />
       </section>
 

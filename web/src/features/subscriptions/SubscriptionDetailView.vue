@@ -5,6 +5,7 @@ import { useRoute } from 'vue-router'
 import { ApiError } from '@/api/client'
 import { toApiError } from '@/api/errors'
 import { keyAfterFailure, newIdempotencyKey } from '@/api/idempotency'
+import { STEP_LABELS } from '@/api/dunning'
 import { fetchInvoices } from '@/api/invoices'
 import { cancelScheduledPlanChange, fetchPlanChanges } from '@/api/planChanges'
 import {
@@ -216,6 +217,13 @@ const tomorrow = computed(() => {
           </div>
         </div>
 
+        <p
+          v-if="subscription.access_suspended"
+          class="mt-4 rounded-md bg-danger/5 px-3 py-2 text-sm text-danger"
+          role="status"
+        >
+          Access suspended: an invoice is unpaid. Paying it restores access right away.
+        </p>
         <div
           v-if="subscription.scheduled_plan_change"
           class="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-md bg-accent/5 px-3 py-2 text-sm"
@@ -346,6 +354,48 @@ const tomorrow = computed(() => {
           </RouterLink>
         </section>
       </div>
+
+      <section
+        v-if="subscription.open_dunning_case"
+        class="rounded-lg border border-status-past-due/30 bg-surface"
+      >
+        <div
+          class="flex flex-wrap items-center justify-between gap-2 border-b border-border px-5 py-3"
+        >
+          <h3 class="text-sm font-semibold">Failed payment recovery</h3>
+          <RouterLink
+            :to="{ name: 'invoice', params: { id: subscription.open_dunning_case.invoice.id } }"
+            class="text-sm text-accent hover:text-accent-strong"
+          >
+            {{ subscription.open_dunning_case.invoice.number }} ·
+            {{ formatMoney(subscription.open_dunning_case.invoice.amount_due_cents) }} due →
+          </RouterLink>
+        </div>
+        <ol class="space-y-2 px-5 py-3 text-sm">
+          <li
+            v-for="step in subscription.open_dunning_case.steps"
+            :key="step.id"
+            class="flex flex-wrap items-center gap-3"
+          >
+            <span class="w-32 text-ink-muted">{{ formatDate(step.executed_at) }}</span>
+            <span class="font-medium">{{ STEP_LABELS[step.step] }}</span>
+            <span class="text-ink-muted">{{ humanize(step.outcome) }}</span>
+          </li>
+          <li
+            v-if="
+              subscription.open_dunning_case.next_step &&
+              subscription.open_dunning_case.next_step_at
+            "
+            class="flex flex-wrap items-center gap-3 text-ink-faint"
+          >
+            <span class="w-32">{{ formatDate(subscription.open_dunning_case.next_step_at) }}</span>
+            <span>Next: {{ STEP_LABELS[subscription.open_dunning_case.next_step] }}</span>
+          </li>
+        </ol>
+        <p class="border-t border-border px-5 py-2 text-xs text-ink-faint">
+          Adding a working default card retries the payment immediately.
+        </p>
+      </section>
 
       <section
         v-if="(planChangesData.data.value?.data.length ?? 0) > 0"

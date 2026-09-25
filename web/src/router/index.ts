@@ -58,6 +58,12 @@ const router = createRouter({
       meta: { title: 'Customer' },
     },
     {
+      path: '/dunning',
+      name: 'dunning',
+      component: () => import('@/features/dunning/DunningBoardView.vue'),
+      meta: { title: 'Dunning' },
+    },
+    {
       path: '/webhooks',
       name: 'webhooks',
       component: () => import('@/features/webhooks/WebhookInboxView.vue'),
