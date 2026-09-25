@@ -60,6 +60,30 @@ prevent: dropped webhooks, failed handlers, bugs.
 - `acknowledge`: requires a note; state unchanged.
 - Both audited as `discrepancy.resolved`.
 
+### Decisions taken during implementation
+- **The provider's payment rule** is part of the projection: a paid invoice makes a
+  `past_due`/`trialing` subscription `active`, a failed payment makes `active`/`trialing`
+  `past_due`; otherwise the last subscription snapshot rules.
+- **Engine-owned facts aren't compared** (`access_suspended_at`, `uncollectible`: invoices
+  compare paid vs unpaid; card refunds only).
+- **A subscription with events still in flight is skipped** for that run (its known
+  discrepancies are left as they are): mid-conversation, engine and provider always differ.
+- **The daily run happens after the day commits** (`after_all_transactions_commit`), once the
+  engine has pushed its changes and the provider's events have been delivered. Inside the
+  day's transaction it found differences that vanished a moment later.
+- **The inbox decides what was received**: an event the inbox processed isn't "undelivered"
+  just because the provider still has it pending for a retry.
+- **Resolutions per kind:** `redeliver`, `reprocess`, `apply_expected` (state machine,
+  refusable), `resync_provider` (the engine is the authority), `acknowledge` (note
+  required). A discrepancy no longer detected becomes `cleared`; an acknowledged one isn't
+  reported again unless its values change.
+- **`apply_expected` waits for the root cause:** it's blocked while a lost or failed event for
+  the same subscription is open, since redelivering the event fixes invoice, dunning and
+  status together. Dunning also closes its case by itself if the subscription left
+  `past_due` without a payment.
+- **A failing daily check never stops the clock**: the error is reported and the next day's
+  run tries again.
+
 ## Frontend
 
 - Screen 14 **Reconciliation**: runs list with "Run now"; run detail with discrepancies

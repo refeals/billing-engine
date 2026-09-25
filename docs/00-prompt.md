@@ -295,11 +295,16 @@ an `Idempotency-Key` header.
 
 ### Reconciliation
 - `POST /reconciliation_runs` — Request: `{ "subscription_id": null }` (null = everything).
-  Response: `{ "id": 3, "status": "completed", "subscriptions_checked": 42, "discrepancies_found": 2 }`
+  Response: `{ "id": 3, "subscriptions_checked": 42, "discrepancies_found": 2, "discrepancies_opened": 1, "discrepancies_cleared": 1, "discrepancies": [...] }`
 - `GET /reconciliation_runs`
-- `GET /reconciliation_runs/:id` — includes discrepancies.
+- `GET /reconciliation_runs/:id` — includes the discrepancies it saw.
+- `GET /reconciliation_discrepancies?status=open&subscription_id=` — each with
+  `available_resolutions` and `blocked_resolutions` (with the reason).
 - `POST /reconciliation_discrepancies/:id/resolve`
-  Request: `{ "strategy": "apply_expected" | "acknowledge", "note": "..." }`
+  Request: `{ "strategy": "redeliver" | "reprocess" | "apply_expected" | "resync_provider" | "acknowledge", "note": "..." }`
+  (`note` required to acknowledge; 422 `correction_not_allowed` when the state machine has no
+  such transition)
+- The subscription detail includes `open_discrepancies_count`.
 
 ### Audit
 - `GET /billing_events?subscription_id=&customer_id=&event_type=&actor_type=&from=&to=&page=`
@@ -500,15 +505,17 @@ someone calls `update_column`.
 - Hash chain (`previous_hash`, `entry_hash`) is a future improvement — see section 7.
 
 **reconciliation_runs**
-- `status`, `scope_subscription_id` (nullable), `triggered_by`, `started_at`, `finished_at`,
-  `subscriptions_checked`, `discrepancies_found`
+- `scope_subscription_id` (nullable), `triggered_by`, `started_at`, `finished_at`,
+  `subscriptions_checked`, `discrepancies_found`, `discrepancies_opened`, `discrepancies_cleared`
 
 **reconciliation_discrepancies**
-- `reconciliation_run_id`, `subscription_id`
+- `first_run_id`, `last_seen_run_id`, `subscription_id`, `subject_key` (one open
+  discrepancy per subscription, kind and subject)
 - `kind`: `status_mismatch` / `period_mismatch` / `plan_mismatch` / `missing_invoice` /
   `invoice_amount_mismatch` / `invoice_status_mismatch` / `undelivered_event` / `failed_event`
 - `field`, `internal_value`, `expected_value`, `evidence_event_ids` (json)
-- `resolution_status` (`open` / `resolved` / `acknowledged`), `resolved_at`, `resolution_note`
+- `status` (`open` / `resolved` / `acknowledged` / `cleared`), `resolution`, `resolved_at`,
+  `resolution_note` (`cleared` = no longer detected by a later run)
 - The expected value comes from a pure projection: replaying every outbox event for that
   subscription, ordered by `provider_created_at`.
 

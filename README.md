@@ -177,6 +177,33 @@ Each step runs once, on its day (days are simulated, one tick per day). A paymen
 point ends the case and the remaining steps never run. What the customer would have been
 emailed is kept in an outbox (`customer_notifications`).
 
+## Reconciliation
+
+The fake provider keeps its own history of everything it did and reported (its outbox), and
+never reads the engine's tables. Reconciliation replays that history per subscription and
+compares the result with what the engine believes:
+
+- **Subscription**: the provider's last snapshot, with Stripe's payment rule on top (a paid
+  invoice makes a `past_due` subscription active; a failed payment makes an active one
+  `past_due`). Status, plan and current period are compared.
+- **Invoices**: paid or not, amount paid, amount refunded to the card.
+- **Events**: sent but never received (a lost webhook), or received but failed.
+
+Each difference is recorded with the provider events that prove it, once (a later run updates
+it, or marks it `cleared` if it stopped being true). Nothing is fixed automatically; the
+operator picks a resolution, and none of them patch data directly:
+
+| Discrepancy | Resolutions |
+|---|---|
+| Lost event | redeliver it through the normal inbox, so every side effect runs |
+| Failed event | reprocess it |
+| Status differs | apply the provider's value through the state machine (refused if there is no such transition), or resend the engine's state to the provider |
+| Plan / period differ | resend the engine's state to the provider |
+| Any | acknowledge, with a note |
+
+A full check runs at the end of every simulated day, after that day's changes have reached the
+provider, and on demand from the Reconciliation screen.
+
 ## Refunds
 
 A paid invoice can be refunded in full or in parts, up to what the card actually paid:
@@ -427,6 +454,17 @@ curl -s -X POST localhost:3001/api/v1/webhooks/stripe \
 - Only open invoices are ever sent for collection: the payment request itself refuses a
   paid or uncollectible invoice, whichever path asks. A canceled subscription is no longer
   shown as "suspended, pay to restore".
+- A lost `invoice.paid` shows up as the missing event, the unpaid invoice and the wrong
+  subscription status, with the event as evidence; redelivering it fixes all three.
+- A correction the state machine doesn't allow (the provider says `active`, the engine
+  already `canceled`) is refused; the operator can only acknowledge it, with a note.
+- A change the provider was never told about (its sync failed) is caught and resent.
+- Reconciliation never reports differences that are only "in flight" (a change committed
+  but not yet delivered), and the same difference found twice is recorded once; an
+  acknowledged difference isn't reported again unless its values change.
+- Correcting a status directly is blocked while the lost event behind it can still be
+  redelivered; if a subscription leaves `past_due` without a payment anyway, its dunning case
+  closes instead of failing on day 14. A reconciliation error never stops the simulated clock.
 - Money typed by the operator is parsed digit by digit, never through floating point, and an
   ambiguous comma (`12,5`) is rejected instead of guessed.
 
@@ -458,7 +496,7 @@ agreed decision live in [`docs/00-prompt.md`](docs/00-prompt.md).
 | 08 | [Plan changes and proration](docs/08-plan-changes-and-proration.md) | Done |
 | 09 | [Refunds](docs/09-refunds.md) | Done |
 | 10 | [Dunning](docs/10-dunning.md) | Done |
-| 11 | [Reconciliation](docs/11-reconciliation.md) | Planned |
+| 11 | [Reconciliation](docs/11-reconciliation.md) | Done |
 | 12 | [Scenario Lab and seeds](docs/12-scenario-lab-and-seeds.md) | Planned |
 | 13 | [Dashboard](docs/13-dashboard.md) | Planned |
 | 14 | [Documentation and release](docs/14-documentation-and-release.md) | Planned |
