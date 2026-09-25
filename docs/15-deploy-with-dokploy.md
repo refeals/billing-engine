@@ -31,7 +31,7 @@ Publish the project as a live demo: the code on GitHub, both apps running on a V
    Each application gets its own domain, logs, environment and redeploy, with nothing to
    wire by hand. Compose would work too, but adds a file that only exists for deployment
    and puts two unrelated build contexts in one unit.
-2. **Two domains**: `billing.rafaelsiqueira.dev` (web) and `api.billing.rafaelsiqueira.dev`
+2. **Two domains**: `billing.rafaelsiqueira.dev` (web) and `billing-api.rafaelsiqueira.dev`
    (API). The web app calls the API cross-origin, exactly as in development, so CORS
    (`WEB_ORIGIN`) and `VITE_API_URL` are the only coupling. Traefik (bundled with Dokploy)
    terminates HTTPS with Let's Encrypt certificates.
@@ -215,18 +215,18 @@ Point two records at the VPS's public IP:
 | Type | Name | Value |
 |---|---|---|
 | A | `billing.rafaelsiqueira.dev` | VPS IP |
-| A | `api.billing.rafaelsiqueira.dev` | VPS IP |
+| A | `billing-api.rafaelsiqueira.dev` | VPS IP |
 
-Wait until `dig +short api.billing.rafaelsiqueira.dev` returns the IP; Let's Encrypt validation
+Wait until `dig +short billing-api.rafaelsiqueira.dev` returns the IP; Let's Encrypt validation
 fails until it does.
 
-**With Cloudflare DNS, set both records to "DNS only" (grey cloud).** Cloudflare's free
-certificate covers `rafaelsiqueira.dev` and `*.rafaelsiqueira.dev`, one level deep, so it has
-no certificate for `api.billing.rafaelsiqueira.dev` and a proxied (orange) record fails the
-TLS handshake at Cloudflare's edge (`ERR_SSL_VERSION_OR_CIPHER_MISMATCH`), before the request
-ever reaches the VPS. With "DNS only", Traefik answers directly with its Let's Encrypt
-certificate. Keeping the proxy would need a one-level name (`billing-api.rafaelsiqueira.dev`)
-and SSL mode **Full (strict)**; "Flexible" loops with Traefik's HTTP→HTTPS redirect.
+**With Cloudflare DNS, keep every name one level deep.** Cloudflare's free certificate covers
+`rafaelsiqueira.dev` and `*.rafaelsiqueira.dev` only, so a proxied (orange) two-level name such
+as `api.billing.rafaelsiqueira.dev` fails the TLS handshake at Cloudflare's edge
+(`ERR_SSL_VERSION_OR_CIPHER_MISMATCH`) before reaching the VPS; that is why the API lives at
+`billing-api`. Proxied records need SSL mode **Full (strict)** (Traefik has a valid Let's
+Encrypt certificate behind it); "Flexible" loops with Traefik's HTTP→HTTPS redirect. Setting a
+record to "DNS only" (grey cloud) also works, with Traefik answering directly.
 
 ### 2. Connect GitHub
 
@@ -259,13 +259,13 @@ repositories and receive push events for automatic deploys.
   the browser blocks every request with a CORS error.
 - **Advanced → Mounts → Add Mount**: type **Volume**, name `billing-api-storage`,
   mount path `/rails/storage`. Without it every deploy starts from an empty database.
-- **Domains → Add Domain**: host `api.billing.rafaelsiqueira.dev`, path `/`, **container port
+- **Domains → Add Domain**: host `billing-api.rafaelsiqueira.dev`, path `/`, **container port
   `3000`**, HTTPS on, certificate **Let's Encrypt**.
 - **Deploy**. The first boot runs the seeds; the logs show `db:prepare`, then Puma
   listening on port 3000.
 
-Check: `curl https://api.billing.rafaelsiqueira.dev/up` answers 200 and
-`curl https://api.billing.rafaelsiqueira.dev/api/v1/dashboard/summary` returns the seeded figures
+Check: `curl https://billing-api.rafaelsiqueira.dev/up` answers 200 and
+`curl https://billing-api.rafaelsiqueira.dev/api/v1/dashboard/summary` returns the seeded figures
 (20 customers' subscriptions, zero open discrepancies).
 
 ### 5. The web application
@@ -278,7 +278,7 @@ Check: `curl https://api.billing.rafaelsiqueira.dev/up` answers 200 and
   building):
 
   ```
-  VITE_API_URL=https://api.billing.rafaelsiqueira.dev/api/v1
+  VITE_API_URL=https://billing-api.rafaelsiqueira.dev/api/v1
   ```
 
 - **Domains → Add Domain**: host `billing.rafaelsiqueira.dev`, path `/`, **container port `80`**,
@@ -325,7 +325,7 @@ Where schedules aren't available, the same from the VPS's crontab:
 | `SIMULATOR_ENABLED` | api | runtime | `true`: the demo needs the clock, the Scenario Lab and the fake provider |
 | `WEB_ORIGIN` | api | runtime | `https://billing.rafaelsiqueira.dev` |
 | `RAILS_LOG_LEVEL` | api | runtime | `info` |
-| `VITE_API_URL` | web | **build** | `https://api.billing.rafaelsiqueira.dev/api/v1` |
+| `VITE_API_URL` | web | **build** | `https://billing-api.rafaelsiqueira.dev/api/v1` |
 
 ## Risks of a public demo
 
@@ -357,7 +357,7 @@ Accepted for a portfolio demo, and stated in the README next to the live link:
 | First deploy marked unhealthy | The seeds take about 15 seconds on first boot; retry, or raise the health check's start period |
 | `db:prepare` fails with `sqlite3: not found` | The image lost the `sqlite3` package (needed to load `structure.sql`) |
 | Certificate not issued | DNS not propagated yet, or ports 80/443 closed on the VPS firewall |
-| `ERR_SSL_VERSION_OR_CIPHER_MISMATCH` / `sslv3 alert handshake failure`, `server: cloudflare` | The record is proxied by Cloudflare and the name is two levels deep (`api.billing.…`); switch it to "DNS only" |
+| `ERR_SSL_VERSION_OR_CIPHER_MISMATCH` / `sslv3 alert handshake failure`, `server: cloudflare` | The record is proxied by Cloudflare and the name is two levels deep (`api.billing.…`); use a one-level name or "DNS only" |
 
 ## Verification
 
@@ -369,7 +369,7 @@ Accepted for a portfolio demo, and stated in the README next to the live link:
 2. Restart the API container: the data is still there (volume) and no seed runs again.
 3. On Dokploy: both domains serve HTTPS; `/up` answers 200; a push to `main` redeploys.
 4. Every scenario passes against the live API:
-   `curl -X POST https://api.billing.rafaelsiqueira.dev/api/v1/simulator/scenarios/<key>/run`.
+   `curl -X POST https://billing-api.rafaelsiqueira.dev/api/v1/simulator/scenarios/<key>/run`.
 
 ## Documentation
 
