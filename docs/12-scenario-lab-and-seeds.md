@@ -78,6 +78,32 @@ Reset drops all data, resets the clock and runs the seeds.
 - README "Try it" section: a guided tour of 3–4 scenarios with what to look at in each.
 - Each entry in "Edge cases handled" links to the scenario and/or test that proves it.
 
+## Decisions taken during implementation
+
+- **Fixed demo calendar.** `BillingClock.travel_to!(time)` is the only sanctioned rewind
+  besides the clock reset, used by the seeds and the demo reset. Seeds start on 2026-01-05
+  09:00 UTC and replay 70 simulated days of "stories" (`day → actions`, 20 studios). Provider
+  ids stay random; the summary is deterministic and asserted exactly in the seed spec.
+- **Shared plan catalog** (`Demo::Catalog`): Starter $29/mo (14-day trial), Studio $59/mo,
+  Studio Pro $99/mo, Studio Annual $590/yr. Scenarios find or create them by code, so they
+  work with or without seeds.
+- **Reset deletes everything.** Append-only triggers are read from `sqlite_master`, dropped,
+  every table emptied inside one transaction (`PRAGMA defer_foreign_keys`), sequences reset
+  and the triggers recreated from the captured SQL before the transaction commits; then the
+  seeds run. The request must send `confirm: "reset"`. It takes about 15 seconds.
+- **Step DSL** (`Scenarios::Base`): `customer`, `card`, `subscribe`, `advance_days`,
+  `advance_to_period_end`, `drop_next`, `deliver_dropped`, `redeliver`, `change_plan`,
+  `refund`, `retry_payment`, `reconcile`, `expect_that`, `expect_refused`. A failed check or
+  an unexpected error marks the run `failed` with the message; the API still answers 201.
+- **Runs are linked to what they caused.** `Current.scenario_run` tags every outbox event
+  with `scenario_run_id`; the run's own events are those tagged *and* for its subscription,
+  because the shared clock renews other subscriptions during the run. `drop_next` also goes
+  through `Current` (one shot: the next event of that type is created dropped).
+- **Shared clock, accepted.** Scenarios advance the one simulated clock; the Scenario Lab says
+  so in a banner, and each run creates its own customer so checks stay independent.
+- `lost_webhook` deliberately leaves its discrepancies open, for the operator to resolve on
+  the Reconciliation screen.
+
 ## Acceptance criteria
 
 - Fresh clone → setup command → app shows realistic data; each scenario runs from the UI and

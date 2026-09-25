@@ -321,17 +321,22 @@ an `Idempotency-Key` header.
 - `POST /simulator/clock/advance` — Request: `{ "days": 3 }`
   Response: `{ "now": "...", "tick_report": { "renewals": 5, "trials_ended": 1, "dunning_steps_executed": 2, "events_emitted": 9 } }`
 - `POST /simulator/clock/reset`
-- `GET /simulator/scenarios` — Response: `[{ "key": "duplicate_webhook", "title": "...", "description": "..." }]`
-- `POST /simulator/scenarios/:key/run`
-  Response: `{ "scenario_run_id": 4, "subscription_id": 9, "events": [] }`
+- `GET /simulator/scenarios` — Response: `{ "data": [{ "key": "duplicate_webhook", "title": "...", "description": "..." }] }`
+- `POST /simulator/scenarios/:key/run` — runs synchronously; a failed check is a normal
+  response with `"status": "failed"`.
+  Response: `{ "id": 4, "scenario_key": "...", "title": "...", "status": "passed", "error": null, "log": [{ "step": "...", "detail": "...", "at": "..." }], "customer_id": 12, "subscription_id": 9, "started_at": "...", "finished_at": "..." }`
+- `GET /simulator/scenarios/runs?page=` — recent runs, newest first.
 - `POST /simulator/events` — make the provider report a subscription.
   Request: `{ "type": "customer.subscription.updated", "subscription_id": 9, "status": "past_due", "delivery": "deliver" | "drop", "copies": 1 }`
   (`status` optional: lets the provider disagree with the engine; `copies` 1–5; invoice
   types are added in plan 07).
 - `POST /simulator/events/:id/deliver` — deliver a dropped event, or redeliver (duplicate).
-- `GET /simulator/events?delivery_status=&page=` — the fake Stripe outbox, with the matching
-  inbox row id once delivered.
-- `POST /simulator/reset` — wipe and reseed the database.
+- `GET /simulator/events?delivery_status=&scenario_run_id=&page=` — the fake Stripe outbox,
+  with the matching inbox row id once delivered; `scenario_run_id` narrows it to the events
+  of that run's subscription.
+- `POST /simulator/reset` — Request: `{ "confirm": "reset" }` (anything else → 422
+  `confirmation_required`). Deletes every row, including append-only history, and reseeds.
+  Response: the demo summary (`simulated_now`, counts per status, `open_discrepancies`).
 
 ## 10. Database schema (draft)
 
@@ -521,7 +526,10 @@ someone calls `update_column`.
 
 **simulation_clock** (single row): `current_time`
 
-**scenario_runs**: `scenario_key`, `status`, `started_at`, `log` (json)
+**scenario_runs**: `scenario_key`, `status` (`running` / `passed` / `failed`), `customer_id`,
+`subscription_id`, `log` (json: `step`, `detail`, `at`), `error`, `started_at`, `finished_at`
+
+**mocked_webhook_events.scenario_run_id** (nullable, no FK): the run that caused the event.
 
 ## 11. Next steps
 

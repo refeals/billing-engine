@@ -43,6 +43,8 @@ bin/dev     # starts the API and the web app together
 | Web | http://localhost:3000 |
 | API | http://localhost:3001/api/v1 |
 
+The first `bin/setup` creates the database and seeds the demo (see [Demo data](#demo-data)).
+
 ### Environment variables
 
 All optional; the defaults work for local development.
@@ -60,6 +62,42 @@ All optional; the defaults work for local development.
 cd api && bundle exec rspec
 cd web && pnpm test:unit
 ```
+
+## Try it
+
+Open the **Scenario Lab** (`/simulator`). Each card runs a short story against the real
+services and ends with checks; the result shows every step with its simulated date, links to
+what it created and the provider events it caused. Four worth running first:
+
+1. **Duplicate webhook** (`duplicate_webhook`): `invoice.paid` is sent three more times. Open
+   the webhook inbox from the events list: one row, three duplicate deliveries, and the
+   subscription history has a single payment.
+2. **Lost webhook** (`lost_webhook`): the provider loses the renewal's `invoice.paid`. Follow
+   the *Reconciliation* link: the missing event, the unpaid invoice and the status are
+   flagged. Redeliver it from there and run reconciliation again: zero discrepancies.
+3. **Full dunning** (`full_dunning`): a declined renewal walks through day 0, 3, 7 and 14.
+   The history shows each step, the suspension and the final cancellation; the invoice ends
+   uncollectible.
+4. **Upgrade mid-cycle** (`upgrade_mid_cycle`): the proration invoice carries a credit line
+   for the unused days of the old plan and a charge for the new one, to the cent.
+
+Scenarios move the **shared** simulated clock, so other subscriptions renew while they run.
+Each run creates its own customer, so runs never break each other's checks.
+
+### Demo data
+
+The seeds build about 20 fictional studios by replaying 70 simulated days from
+2026-01-05, only through the services and the clock (never by inserting rows), so the audit
+trail, the provider's outbox and the invoices agree from the first screen. They end with
+every state on display: trials, active subscriptions on every plan (one yearly), an upgrade
+and a downgrade, refunds to the card and to the credit balance, a paused subscription, two
+cancellations, one scheduled cancellation, dunning cases at day 0, 3 and 7, one recovered
+and one exhausted, and a renewal that failed on an expired card. Reconciliation starts at
+zero discrepancies.
+
+**Reset demo data** (bottom of the Scenario Lab, or `POST /api/v1/simulator/reset` with
+`{"confirm": "reset"}`) deletes everything, including the append-only history, and runs the
+seeds again. It is the only path in the app that removes history.
 
 ## Subscription lifecycle
 
@@ -261,9 +299,9 @@ sequenceDiagram
     Dispatcher->>Outbox: delivered, or still pending (retried later)
 ```
 
-The Scenario Lab (`/simulator`) shows the outbox and can make the provider report a
-subscription, possibly disagreeing with the engine, dropped (a lost webhook) or sent several
-times (duplicates).
+The Scenario Lab (`/simulator`, under *Advanced*) shows the outbox and can make the provider
+report a subscription, possibly disagreeing with the engine, dropped (a lost webhook) or sent
+several times (duplicates).
 
 Try it with the fixture (an event type the engine doesn't handle yet, so it is acknowledged
 and ignored):
@@ -361,6 +399,8 @@ curl -s -X POST localhost:3001/api/v1/webhooks/stripe \
 
 ## Edge cases handled
 
+Where a Scenario Lab scenario reproduces a case, its key is given in brackets.
+
 - The simulated clock can't move backwards (except through an explicit reset), and advancing
   several days runs each day's work in order.
 - A tick that fails rolls back that simulated day instead of leaving time advanced with
@@ -389,7 +429,8 @@ curl -s -X POST localhost:3001/api/v1/webhooks/stripe \
 - Pause with an automatic resume date; an open-ended pause stays paused until resumed.
 - One live subscription per customer, enforced by a partial unique index as well as by the
   service.
-- The same webhook delivered several times is applied once and counted as duplicates.
+- The same webhook delivered several times is applied once and counted as duplicates
+  [`duplicate_webhook`].
 - Two deliveries of the same event racing each other: the lock and re-read inside the
   processing transaction let only one apply it.
 - A webhook handler that fails leaves no partial changes, keeps its error on the inbox row,
@@ -403,7 +444,7 @@ curl -s -X POST localhost:3001/api/v1/webhooks/stripe \
 - Unsigned events are only accepted while the simulator is on; with it off, the endpoint
   refuses everything until real signature verification exists (fail closed).
 - A dropped (lost) webhook stays in the provider's outbox and never reaches the engine
-  until it is delivered by hand; reconciliation (plan 11) will flag it on its own.
+  until it is delivered by hand; reconciliation flags it on its own [`lost_webhook`].
 - A delivery the inbox fails (500) stays pending at the provider and is retried on the next
   flush, at the latest once per simulated day; once it succeeds, the inbox processes it once.
 - A change that rolls back never reaches the provider; a request refused by local checks
@@ -418,16 +459,18 @@ curl -s -X POST localhost:3001/api/v1/webhooks/stripe \
   screen isn't invalidated by an event that changed nothing.
 - A trial becomes active only when `invoice.paid` arrives; a declined card, an expired card
   (checked against the simulated date) or no card at all moves it to `past_due` instead.
-- A card that expires between two renewals fails the second renewal with `expired_card`.
+- A card that expires between two renewals fails the second renewal with `expired_card`
+  [`expired_card`].
 - Credit covering part of an invoice reduces the charge; credit covering all of it settles
   the invoice without any charge. Ledger, invoice lines and totals always agree.
 - The same charge reported by two events (`charge.succeeded` and `invoice.paid`) is recorded
-  once; a failure reported after the payment can't undo it.
+  once; a failure reported after the payment can't undo it [`out_of_order_events`].
 - A trial is invoiced once, even if its payment keeps failing; a paused subscription is not
   billed for the paused time.
 - An invoice number rolled back with its invoice is reused, so the sequence has no gaps.
 - A downgrade's unused difference becomes credit that the next renewal consumes; an upgrade
-  whose payment fails keeps the new plan and moves the subscription to `past_due`.
+  whose payment fails keeps the new plan and moves the subscription to `past_due`
+  [`downgrade_with_credit`, `upgrade_mid_cycle`].
 - Two plan changes in the same period: each one prorates from the plan in effect at that
   moment.
 - The clock moving between preview and confirm doesn't change the amount (the preview's
@@ -440,22 +483,26 @@ curl -s -X POST localhost:3001/api/v1/webhooks/stripe \
 - Changing between monthly and yearly billing is refused (not supported) instead of being
   prorated wrongly.
 - Partial refunds add up to exactly what was paid and not one cent more (service, database
-  and provider all refuse the extra cent); pending refunds count against the limit.
+  and provider all refuse the extra cent); pending refunds count against the limit
+  [`partial_refund`].
 - A refund that fails at the provider releases its amount; a refund to the credit balance
   is immediate and spent by the next invoice.
 - A refund's webhooks delivered twice don't count it twice; an invoice paid entirely with
   credit has nothing refundable.
 - Dunning steps run exactly on days 0, 3, 7 and 14, whether the clock moves day by day or
-  two weeks at once; a job running twice doesn't repeat a step or a notification.
+  two weeks at once; a job running twice doesn't repeat a step or a notification
+  [`full_dunning`].
 - A retry that fails again continues the same case; a working default card added during
-  dunning retries at once, and paying after the suspension restores access.
+  dunning retries at once, and paying after the suspension restores access
+  [`failed_payment_recovery`].
 - Canceling during dunning closes the case but keeps the invoice owed; a case that runs out
   marks the invoice uncollectible, so it can't be retried or refunded afterwards.
 - Only open invoices are ever sent for collection: the payment request itself refuses a
   paid or uncollectible invoice, whichever path asks. A canceled subscription is no longer
   shown as "suspended, pay to restore".
 - A lost `invoice.paid` shows up as the missing event, the unpaid invoice and the wrong
-  subscription status, with the event as evidence; redelivering it fixes all three.
+  subscription status, with the event as evidence; redelivering it fixes all three
+  [`lost_webhook`].
 - A correction the state machine doesn't allow (the provider says `active`, the engine
   already `canceled`) is refused; the operator can only acknowledge it, with a note.
 - A change the provider was never told about (its sync failed) is caught and resent.
@@ -465,6 +512,12 @@ curl -s -X POST localhost:3001/api/v1/webhooks/stripe \
 - Correcting a status directly is blocked while the lost event behind it can still be
   redelivered; if a subscription leaves `past_due` without a payment anyway, its dunning case
   closes instead of failing on day 14. A reconciliation error never stops the simulated clock.
+- Seeds and scenarios go through the same services as the operator, so the demo can't show
+  a state the engine couldn't reach; every scenario also runs in the test suite, and the
+  seeded demo reconciles to zero differences.
+- Resetting the demo is the only way history is deleted: the append-only triggers are
+  dropped and recreated inside the same transaction, and the request must say `confirm:
+  "reset"`.
 - Money typed by the operator is parsed digit by digit, never through floating point, and an
   ambiguous comma (`12,5`) is rejected instead of guessed.
 
@@ -497,7 +550,7 @@ agreed decision live in [`docs/00-prompt.md`](docs/00-prompt.md).
 | 09 | [Refunds](docs/09-refunds.md) | Done |
 | 10 | [Dunning](docs/10-dunning.md) | Done |
 | 11 | [Reconciliation](docs/11-reconciliation.md) | Done |
-| 12 | [Scenario Lab and seeds](docs/12-scenario-lab-and-seeds.md) | Planned |
+| 12 | [Scenario Lab and seeds](docs/12-scenario-lab-and-seeds.md) | Done |
 | 13 | [Dashboard](docs/13-dashboard.md) | Planned |
 | 14 | [Documentation and release](docs/14-documentation-and-release.md) | Planned |
 
