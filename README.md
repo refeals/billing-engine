@@ -7,6 +7,10 @@ fitness studios. It is a portfolio project focused on one narrow, easy-to-get-wr
 The payment provider (Stripe) is simulated in-process and a simulated clock fast-forwards
 weeks of billing in seconds, so every hard case can be reproduced with one click.
 
+**Live demo: [billing.rafaelsiqueira.dev](https://billing.rafaelsiqueira.dev)** — no sign-in,
+fictional data. Every visitor shares the same simulated clock, so the data you see may
+have been moved by someone else's scenario.
+
 **What to look at**
 
 - A strict [subscription state machine](#subscription-lifecycle) with a single write path.
@@ -642,7 +646,6 @@ Deliberately left out; each is a clean extension point rather than a rewrite:
 - A hash chain on the audit log, so tampering outside the application is detectable.
 - History charts on the dashboard (MRR over time, churn).
 - Authentication and multiple operators; multiple currencies; taxes.
-- A hosted demo; the project runs locally.
 
 ## Project structure
 
