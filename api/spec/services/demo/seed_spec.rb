@@ -23,6 +23,16 @@ RSpec.describe Demo::Seed do
     expect(Reconciliation::Run.call(triggered_by: "admin").discrepancies_found).to eq(0)
   end
 
+  it "gives the dashboard the same figures" do
+    dashboard = Dashboard::Summary.call
+
+    expect(dashboard[:subscriptions_by_status]).to eq(@summary[:subscriptions])
+    expect(dashboard[:dunning]).to include(open_cases: 3, by_step: @summary[:open_dunning_cases])
+    expect(dashboard[:dunning][:amount_at_risk_cents]).to be_positive
+    expect(dashboard[:paying_subscriptions]).to eq(15)
+    expect(dashboard[:mrr_cents]).to eq(89_517)
+  end
+
   it "leaves the audit trail and the ledger consistent" do
     created = BillingEvent.of_type("subscription.transitioned").where("json_extract(data, '$.context.reason') = 'subscription_created'")
     expect(created.distinct.count(:subscription_id)).to eq(Subscription.count)
