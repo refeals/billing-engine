@@ -62,3 +62,44 @@ jobs:
       - run: pnpm type-check
       - run: pnpm test:unit --run
       - run: pnpm build-only
+
+  # Both apps together in a real browser: the API in the test environment (its own SQLite
+  # file) and the production build of the web app, started by Playwright itself.
+  e2e:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install sqlite3 CLI
+        run: sudo apt-get update && sudo apt-get install --no-install-recommends -y sqlite3
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          working-directory: api
+          bundler-cache: true
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium
+      - run: pnpm test:e2e
+
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            web/playwright-report
+            web/test-results
+          retention-days: 7

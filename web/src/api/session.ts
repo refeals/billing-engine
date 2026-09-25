@@ -6,12 +6,7 @@ export interface SessionUser {
   name: string
 }
 
-// Public on purpose: the demo login shows them. Must match Demo::User in the API
-// (api/app/services/demo/user.rb).
-export const DEMO_CREDENTIALS = {
-  email: 'demo@billing-engine.dev',
-  password: 'demo-billing-2026',
-} as const
+export { DEMO_CREDENTIALS } from './demoCredentials'
 
 export function fetchSession() {
   return apiRequest<{ user: SessionUser }>('/session')
