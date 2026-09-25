@@ -78,6 +78,13 @@ cd web && pnpm lint && pnpm type-check && pnpm test:unit --run
 
 CI (GitHub Actions) runs the same checks plus `bundler-audit` and a production build.
 
+### Deploy
+
+Both apps ship as Docker images (`api/Dockerfile`, `web/Dockerfile`). Deploying them to a
+VPS with Dokploy (two applications, HTTPS domains, a persistent volume for SQLite, deploy on
+push) is described step by step in
+[`docs/15-deploy-with-dokploy.md`](docs/15-deploy-with-dokploy.md).
+
 ## Try it
 
 Open the **Scenario Lab** (`/simulator`). Each card runs a short story against the real
@@ -681,3 +688,4 @@ built, reviewed and committed before the next.
 | 12 | [Scenario Lab and seeds](docs/12-scenario-lab-and-seeds.md) |
 | 13 | [Dashboard](docs/13-dashboard.md) |
 | 14 | [Documentation and release](docs/14-documentation-and-release.md) |
+| 15 | [Deploy with Dokploy](docs/15-deploy-with-dokploy.md) |
