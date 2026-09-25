@@ -50,6 +50,23 @@ Final structure:
 - Clean clone → documented setup → seeds → all scenarios pass → CI green.
 - Tag `v1.0.0`.
 
+## Decisions taken during implementation
+
+- **README for a first-time reader**: a "What to look at" list up front, screenshots, then
+  quick start and the guided tour; architecture decisions grouped (time and consistency,
+  money, provider and webhooks, API and frontend); the roadmap became "How it was built".
+- **Every edge case links to its spec** (and to the scenario that reproduces it, when there
+  is one), grouped by area.
+- **Screenshots** are taken with headless Chrome against the seeded demo (no new
+  dependency), saved in `docs/screenshots/`.
+- **Code pass**: comments that referred to future plans rewritten in the present; the
+  sidebar's "ships in plan NN" placeholder removed, since every section exists.
+- **Found while taking screenshots**: a recovered dunning case showed $0.00 (amount due after
+  payment); the board now shows the invoice total.
+- **Release check** runs on a copy of the repository's files without ignored ones (a fresh
+  clone of the final state): `bin/setup` seeds the demo, the CI checks pass and all ten
+  scenarios pass through the API. The `v1.0.0` tag is created by the maintainer.
+
 ## Acceptance criteria
 
 - Someone following only the README can run the project and reproduce every edge case listed.

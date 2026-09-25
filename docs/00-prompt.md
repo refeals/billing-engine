@@ -329,8 +329,7 @@ an `Idempotency-Key` header.
 - `GET /simulator/scenarios/runs?page=` — recent runs, newest first.
 - `POST /simulator/events` — make the provider report a subscription.
   Request: `{ "type": "customer.subscription.updated", "subscription_id": 9, "status": "past_due", "delivery": "deliver" | "drop", "copies": 1 }`
-  (`status` optional: lets the provider disagree with the engine; `copies` 1–5; invoice
-  types are added in plan 07).
+  (`status` optional: lets the provider disagree with the engine; `copies` 1–5).
 - `POST /simulator/events/:id/deliver` — deliver a dropped event, or redeliver (duplicate).
 - `GET /simulator/events?delivery_status=&scenario_run_id=&page=` — the fake Stripe outbox,
   with the matching inbox row id once delivered; `scenario_run_id` narrows it to the events
@@ -532,8 +531,8 @@ someone calls `update_column`.
 
 **mocked_webhook_events.scenario_run_id** (nullable, no FK): the run that caused the event.
 
-## 11. Next steps
+## 11. Outcome
 
-1. Project structure (Rails + Vue folders, conventions, tooling).
-2. README skeleton with the state machine diagram and "Edge cases handled".
-3. Implementation, phase by phase, each approved before the next.
+Implemented in fourteen plans (`01`–`14` in this folder), each planned, built, reviewed and
+committed before the next. The README describes the finished project; `architecture.md`
+has the diagrams.

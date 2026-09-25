@@ -4,15 +4,28 @@ A subscription billing engine for a fictional SaaS that sells subscriptions to g
 fitness studios. It is a portfolio project focused on one narrow, easy-to-get-wrong problem:
 **managing the financial lifecycle of a subscription correctly**.
 
-It covers what usually goes wrong in real billing systems: a strict subscription state
-machine, idempotent webhook processing, mid-cycle proration, a dunning schedule for failed
-payments, reconciliation against the payment provider, and an append-only audit trail.
+The payment provider (Stripe) is simulated in-process and a simulated clock fast-forwards
+weeks of billing in seconds, so every hard case can be reproduced with one click.
 
-The payment provider (Stripe) is simulated in-process. No real network calls are made, and a
-simulated clock lets you fast-forward weeks of billing in seconds.
+**What to look at**
 
-> **Status:** in progress. The foundation is done; features ship one plan at a time (see
-> [Roadmap](#roadmap)).
+- A strict [subscription state machine](#subscription-lifecycle) with a single write path.
+- [Idempotent webhook processing](#webhook-processing): an inbox deduplicated by event id,
+  stale events skipped, failures retried by the provider.
+- [Proration](#proration) to the cent, with a signed quote so the amount confirmed is the
+  amount previewed.
+- A [dunning schedule](#dunning) (day 0, 3, 7, 14) that runs exactly once per step.
+- [Reconciliation](#reconciliation) against the provider's own history, with evidence and
+  resolutions that never patch data directly.
+- An append-only audit trail enforced by the database, and a history screen per subscription.
+- A [Scenario Lab](#try-it) that replays ten edge cases, each ending in checks that also run
+  in the test suite.
+
+![Dashboard](docs/screenshots/dashboard.png)
+
+| Subscription history | Dunning board | Scenario Lab |
+|---|---|---|
+| ![Subscription history](docs/screenshots/subscription-history.png) | ![Dunning board](docs/screenshots/dunning-board.png) | ![Scenario Lab](docs/screenshots/scenario-lab.png) |
 
 ## Stack
 
@@ -56,12 +69,14 @@ All optional; the defaults work for local development.
 | `SIMULATOR_ENABLED` | api | `true` in development/test | Mounts the simulator endpoints (clock, fake provider) |
 | `PORT` | api | `3001` | API port |
 
-### Tests
+### Tests and checks
 
 ```sh
-cd api && bundle exec rspec
-cd web && pnpm test:unit
+cd api && bundle exec rspec && bin/rubocop && bin/brakeman   # includes all 10 scenarios
+cd web && pnpm lint && pnpm type-check && pnpm test:unit --run
 ```
+
+CI (GitHub Actions) runs the same checks plus `bundler-audit` and a production build.
 
 ## Try it
 
@@ -322,8 +337,8 @@ The Scenario Lab (`/simulator`, under *Advanced*) shows the outbox and can make 
 report a subscription, possibly disagreeing with the engine, dropped (a lost webhook) or sent
 several times (duplicates).
 
-Try it with the fixture (an event type the engine doesn't handle yet, so it is acknowledged
-and ignored):
+Try it with the fixture (`invoice.finalized`, which the engine doesn't act on because it
+issued the invoice itself, so it is acknowledged and ignored):
 
 ```sh
 curl -s -X POST localhost:3001/api/v1/webhooks/stripe \
@@ -334,19 +349,11 @@ curl -s -X POST localhost:3001/api/v1/webhooks/stripe \
 
 ## Architecture decisions
 
-- **One gateway, outcomes only via webhooks.** The engine talks to the provider through
-  `PaymentGateway`; replacing the fake with real Stripe means one new module. Gateway calls
-  return identifiers only, so no engine code can depend on a synchronous "it worked".
-- **The fake provider is an event-sourced outbox that never reads engine data.** Its
-  methods take plain values and write only to `mocked_webhook_events` (a spec checks every SQL
-  statement). That independence is what makes its history a fair "expected state" for
-  reconciliation later.
-- **Delivery after commit.** Events are delivered once every open transaction has
-  committed, so a webhook never sees, or acts on, data that may still roll back, and the
-  provider never hears about a change that rolled back.
-- **Subscription changes are pushed from an `after_commit` callback**, with a snapshot of
-  plain values. No service can forget it, and webhook observation writes with
-  `update_columns`, so provider reports are never echoed back.
+Diagrams of the components, the main flows and the data model are in
+[`docs/architecture.md`](docs/architecture.md). Every decision below was taken in one of the
+[plans](docs/) and is recorded there with its reasoning.
+
+### Time and consistency
 
 - **Simulated clock.** Billing flows span weeks (trials, renewals, a 14-day dunning
   schedule), so every piece of code reads time from `BillingClock.now`, never from
@@ -364,17 +371,6 @@ curl -s -X POST localhost:3001/api/v1/webhooks/stripe \
 - **`structure.sql` instead of `schema.rb`.** `schema.rb` can't represent triggers, so a test
   or freshly created database would silently lose the append-only guarantee. The cost is
   needing the `sqlite3` CLI.
-- **Plans are immutable where it matters.** A plan's code, price, currency and interval are
-  read-only once created (assigning them raises). Changing the price of a plan in use would
-  silently change what current subscribers pay; repricing means creating a new plan and
-  archiving the old one.
-- **Credit is a ledger, the balance is a cache.** Customer credit only moves through
-  `CreditLedger`, which writes an append-only entry, updates the cached balance and audits
-  the movement in one transaction, with the customer row locked so two debits can't both
-  pass the balance check. Each reason can only move the balance in its own direction.
-- **Test cards by token, like Stripe test mode.** A payment method stores a token such as
-  `pm_card_chargeDeclinedInsufficientFunds`, and that token decides how the fake provider
-  answers a charge. Demo scenarios pick a card that will fail without any real card data.
 - **Optimistic locking on every operator action.** Each action carries the `lock_version` the
   screen was loaded with. If the subscription changed in between (another operator, or a tick
   that renewed or canceled it), the API answers 409 and applies nothing; the UI offers to
@@ -383,18 +379,47 @@ curl -s -X POST localhost:3001/api/v1/webhooks/stripe \
   `Idempotency-Key` per user intent (per dialog). The API stores the first response and
   replays it for retries of the same request (errors included), refuses the key for a
   different request, and doesn't keep 5xx responses so a real retry can run.
-- **Allowed actions come from the API.** `allowed_actions` is computed by the model from the
-  state and flags; the API refuses anything else and the UI only renders those buttons, so
-  both can't disagree.
+
+### Money
+
+- **Money as integer cents.** Every amount is stored as `*_cents` integers with a `currency`
+  column (always `USD`). Floats never touch money.
+- **Credit is a ledger, the balance is a cache.** Customer credit only moves through
+  `CreditLedger`, which writes an append-only entry, updates the cached balance and audits
+  the movement in one transaction, with the customer row locked so two debits can't both
+  pass the balance check. Each reason can only move the balance in its own direction.
+- **Plans are immutable where it matters.** A plan's code, price, currency and interval are
+  read-only once created (assigning them raises). Changing the price of a plan in use would
+  silently change what current subscribers pay; repricing means creating a new plan and
+  archiving the old one.
+- **An issued invoice is a document.** Number, period and amounts are read-only, lines are
+  append-only, and `total = subtotal - credit applied` is a database check. Numbers are
+  gap-free per year: the counter is incremented in the invoice's own transaction.
 - **Invoices are only settled by the provider's webhook.** The engine issues an invoice,
   asks the provider to collect it and waits; `invoice.paid` is the only thing that marks it
   paid and activates a trial or recovers a past-due subscription. Even a $0 invoice covered
   by credit goes through the provider, so there is exactly one settlement path.
-- **An issued invoice is a document.** Number, period and amounts are read-only, lines are
-  append-only, and `total = subtotal - credit applied` is a database check. Numbers are
-  gap-free per year: the counter is incremented in the invoice's own transaction.
 - **Pausing stops the billing clock.** Paused time is never billed: on resume, a period that
   ended during the pause is replaced by a new one starting at the resume moment.
+
+### Provider and webhooks
+
+- **One gateway, outcomes only via webhooks.** The engine talks to the provider through
+  `PaymentGateway`; replacing the fake with real Stripe means one new module. Gateway calls
+  return identifiers only, so no engine code can depend on a synchronous "it worked".
+- **The fake provider is an event-sourced outbox that never reads engine data.** Its
+  methods take plain values and write only to `mocked_webhook_events` (a spec checks every SQL
+  statement). That independence is what makes its history a fair "expected state" for
+  reconciliation.
+- **Delivery after commit.** Events are delivered once every open transaction has
+  committed, so a webhook never sees, or acts on, data that may still roll back, and the
+  provider never hears about a change that rolled back.
+- **Subscription changes are pushed from an `after_commit` callback**, with a snapshot of
+  plain values. No service can forget it, and webhook observation writes with
+  `update_columns`, so provider reports are never echoed back.
+- **Test cards by token, like Stripe test mode.** A payment method stores a token such as
+  `pm_card_chargeDeclinedInsufficientFunds`, and that token decides how the fake provider
+  answers a charge. Demo scenarios pick a card that will fail without any real card data.
 - **Inbox pattern for webhooks, deduplicated by event id.** The provider's event id is the
   idempotency key, backed by a unique index. Duplicates and deliberately ignored event types
   get 200 (anything else makes the provider retry forever); a failed handler gets 500 so the
@@ -405,8 +430,12 @@ curl -s -X POST localhost:3001/api/v1/webhooks/stripe \
 - **Ordering per object.** Each record remembers the newest provider event applied to it and
   skips older ones. The check is per record: an old event about one invoice is still valid
   after a newer event about another.
-- **Money as integer cents.** Every amount is stored as `*_cents` integers with a `currency`
-  column (always `USD`). Floats never touch money.
+
+### API and frontend
+
+- **Allowed actions come from the API.** `allowed_actions` is computed by the model from the
+  state and flags; the API refuses anything else and the UI only renders those buttons, so
+  both can't disagree.
 - **One error shape, one list shape.** Every API error is
   `{ "error": { "code", "message", "details" } }`, with 422 for business-rule violations, 409
   for concurrent-edit conflicts and 404 for missing records. Every list is
@@ -418,167 +447,237 @@ curl -s -X POST localhost:3001/api/v1/webhooks/stripe \
 
 ## Edge cases handled
 
-Where a Scenario Lab scenario reproduces a case, its key is given in brackets.
+Each case links to the spec that proves it; where a Scenario Lab scenario reproduces it, its
+key is given in brackets.
+
+### Time and audit
 
 - The simulated clock can't move backwards (except through an explicit reset), and advancing
-  several days runs each day's work in order.
+  several days runs each day's work in order ([billing_clock_spec.rb](api/spec/services/billing_clock_spec.rb)).
 - A tick that fails rolls back that simulated day instead of leaving time advanced with
-  half-done work.
-- Updating or deleting an audit row is refused by the database, even through raw SQL.
+  half-done work ([billing_clock_spec.rb](api/spec/services/billing_clock_spec.rb)).
+- Updating or deleting an audit row is refused by the database, even through raw SQL
+  ([billing_event_spec.rb](api/spec/models/billing_event_spec.rb)).
 - A business change and its audit row can't be split: recording an audit event outside a
-  transaction raises, and rolling back the change rolls back the event.
+  transaction raises, and rolling back the change rolls back the event
+  ([audit_spec.rb](api/spec/services/audit_spec.rb)).
+- Resetting the demo is the only way history is deleted: the append-only triggers are
+  dropped and recreated inside the same transaction, and the request must say `confirm:
+  "reset"` ([reset_spec.rb](api/spec/services/demo/reset_spec.rb), [scenarios_spec.rb](api/spec/requests/api/v1/simulator/scenarios_spec.rb)).
+
+### Catalog, customers and operator actions
+
 - Repricing a plan can't affect current subscribers: price and interval can't be changed
   after creation (model and database rules), and archived plans keep working for existing
-  subscribers.
+  subscribers ([plan_spec.rb](api/spec/models/plan_spec.rb), [archive_spec.rb](api/spec/services/plans/archive_spec.rb)).
 - A card that has already expired is refused on attach. A card can also expire while a
-  subscription runs, because expiry is checked against the simulated clock.
+  subscription runs, because expiry is checked against the simulated clock
+  ([attach_spec.rb](api/spec/services/payment_methods/attach_spec.rb)).
 - Customer credit can never go negative (service check, model validation and a database
-  constraint), and a failed operation leaves the ledger and the cached balance untouched.
+  constraint), and a failed operation leaves the ledger and the cached balance untouched
+  ([credit_ledger_spec.rb](api/spec/services/credit_ledger_spec.rb), [credit_ledger_entry_spec.rb](api/spec/models/credit_ledger_entry_spec.rb)).
 - At most one default card per customer, enforced by a partial unique index; switching the
-  default unsets the old one first in the same transaction.
-- Emails are unique regardless of case or surrounding spaces.
-- An invalid status change is refused with the allowed alternatives, and nothing is written.
+  default unsets the old one first in the same transaction
+  ([make_default_spec.rb](api/spec/services/payment_methods/make_default_spec.rb)).
+- Emails are unique regardless of case or surrounding spaces ([customer_spec.rb](api/spec/models/customer_spec.rb)).
 - Two operators acting on the same subscription: the second one gets a 409 instead of
-  overwriting the first.
+  overwriting the first ([transition_spec.rb](api/spec/services/subscriptions/transition_spec.rb), [subscriptions_spec.rb](api/spec/requests/api/v1/subscriptions_spec.rb)).
 - Double click or retry on "Cancel": the idempotency key makes it apply once and replays the
   same response. After a 4xx the frontend starts a new key, so fixing the input and submitting
-  again is a new attempt, not a "reused key" error; after a network error it keeps the key.
+  again is a new attempt, not a "reused key" error; after a network error it keeps the key
+  ([subscriptions_spec.rb](api/spec/requests/api/v1/subscriptions_spec.rb), [idempotency.spec.ts](web/src/api/__tests__/idempotency.spec.ts)).
+- Money typed by the operator is parsed digit by digit, never through floating point, and an
+  ambiguous comma (`12,5`) is rejected instead of guessed ([money.spec.ts](web/src/utils/__tests__/money.spec.ts)).
+
+### Subscription lifecycle
+
+- An invalid status change is refused with the allowed alternatives, and nothing is written
+  ([subscription_state_machine_spec.rb](api/spec/models/subscription_state_machine_spec.rb), [transition_spec.rb](api/spec/services/subscriptions/transition_spec.rb)).
 - Cancel at period end, including during a trial: the trial ends canceled instead of
-  converting, because cancellations run before trial conversion in each tick.
-- Pause with an automatic resume date; an open-ended pause stays paused until resumed.
+  converting, because cancellations run before trial conversion in each tick
+  ([subscription_ticks_spec.rb](api/spec/services/ticks/subscription_ticks_spec.rb)).
+- Pause with an automatic resume date; an open-ended pause stays paused until resumed
+  ([subscription_ticks_spec.rb](api/spec/services/ticks/subscription_ticks_spec.rb), [admin_actions_spec.rb](api/spec/services/subscriptions/admin_actions_spec.rb)).
 - One live subscription per customer, enforced by a partial unique index as well as by the
-  service.
+  service ([create_spec.rb](api/spec/services/subscriptions/create_spec.rb)).
+
+### Webhooks and the provider
+
 - The same webhook delivered several times is applied once and counted as duplicates
-  [`duplicate_webhook`].
+  [`duplicate_webhook`] ([ingest_spec.rb](api/spec/services/webhooks/ingest_spec.rb)).
 - Two deliveries of the same event racing each other: the lock and re-read inside the
-  processing transaction let only one apply it.
+  processing transaction let only one apply it ([ingest_spec.rb](api/spec/services/webhooks/ingest_spec.rb)).
 - A webhook handler that fails leaves no partial changes, keeps its error on the inbox row,
-  answers 500 so the provider retries, and succeeds on the next delivery.
+  answers 500 so the provider retries, and succeeds on the next delivery
+  ([ingest_spec.rb](api/spec/services/webhooks/ingest_spec.rb)).
 - An event older than one already applied to the same record is skipped as stale; events
-  sharing a timestamp are all processed.
+  sharing a timestamp are all processed [`out_of_order_events`] ([ingest_spec.rb](api/spec/services/webhooks/ingest_spec.rb)).
 - Unknown event types are acknowledged and ignored; an event about a subscription the engine
   doesn't know fails (and is retried) instead of being dropped; a malformed payload (bad
   JSON, missing fields, `data.object` that isn't an object) gets 400, never a 500 that the
-  provider would retry forever.
+  provider would retry forever ([ingest_spec.rb](api/spec/services/webhooks/ingest_spec.rb), [webhooks_spec.rb](api/spec/requests/api/v1/webhooks_spec.rb)).
 - Unsigned events are only accepted while the simulator is on; with it off, the endpoint
-  refuses everything until real signature verification exists (fail closed).
+  refuses everything until real signature verification exists (fail closed)
+  ([ingest_spec.rb](api/spec/services/webhooks/ingest_spec.rb)).
 - A dropped (lost) webhook stays in the provider's outbox and never reaches the engine
-  until it is delivered by hand; reconciliation flags it on its own [`lost_webhook`].
+  until it is delivered by hand; reconciliation flags it on its own [`lost_webhook`]
+  ([dispatcher_spec.rb](api/spec/models/fake_stripe/dispatcher_spec.rb)).
 - A delivery the inbox fails (500) stays pending at the provider and is retried on the next
-  flush, at the latest once per simulated day; once it succeeds, the inbox processes it once.
+  flush, at the latest once per simulated day; once it succeeds, the inbox processes it once
+  ([dispatcher_spec.rb](api/spec/models/fake_stripe/dispatcher_spec.rb)).
 - A change that rolls back never reaches the provider; a request refused by local checks
-  (expired card, duplicate email) never reaches it either.
+  (expired card, duplicate email) never reaches it either
+  ([payment_gateway_integration_spec.rb](api/spec/services/payment_gateway_integration_spec.rb)).
 - If the provider can't be told about a committed change, the change stands, the request
   still succeeds and the failure is audited (`provider.sync_failed`) for reconciliation, instead
-  of a 500 for work that is already done.
+  of a 500 for work that is already done ([payment_gateway_integration_spec.rb](api/spec/services/payment_gateway_integration_spec.rb)).
 - An unexpected error while delivering a webhook counts as a failed delivery (retried later),
   never as an error for the request whose commit triggered the delivery. A manually delivered
-  "lost" event that fails goes back to the retry queue.
+  "lost" event that fails goes back to the retry queue
+  ([dispatcher_spec.rb](api/spec/models/fake_stripe/dispatcher_spec.rb), [events_spec.rb](api/spec/requests/api/v1/simulator/events_spec.rb)).
 - Recording a webhook doesn't bump the subscription's `lock_version`, so an operator's open
-  screen isn't invalidated by an event that changed nothing.
+  screen isn't invalidated by an event that changed nothing
+  ([payment_gateway_integration_spec.rb](api/spec/services/payment_gateway_integration_spec.rb)).
+
+### Invoices and payments
+
 - A trial becomes active only when `invoice.paid` arrives; a declined card, an expired card
-  (checked against the simulated date) or no card at all moves it to `past_due` instead.
+  (checked against the simulated date) or no card at all moves it to `past_due` instead
+  ([billing_cycle_spec.rb](api/spec/services/billing_cycle_spec.rb)).
 - A card that expires between two renewals fails the second renewal with `expired_card`
-  [`expired_card`].
+  [`expired_card`] ([billing_cycle_spec.rb](api/spec/services/billing_cycle_spec.rb)).
 - Credit covering part of an invoice reduces the charge; credit covering all of it settles
-  the invoice without any charge. Ledger, invoice lines and totals always agree.
+  the invoice without any charge. Ledger, invoice lines and totals always agree
+  ([billing_cycle_spec.rb](api/spec/services/billing_cycle_spec.rb), [issue_spec.rb](api/spec/services/invoices/issue_spec.rb)).
 - The same charge reported by two events (`charge.succeeded` and `invoice.paid`) is recorded
-  once; a failure reported after the payment can't undo it [`out_of_order_events`].
+  once; a failure reported after the payment can't undo it [`out_of_order_events`]
+  ([billing_cycle_spec.rb](api/spec/services/billing_cycle_spec.rb)).
 - A trial is invoiced once, even if its payment keeps failing; a paused subscription is not
-  billed for the paused time.
-- An invoice number rolled back with its invoice is reused, so the sequence has no gaps.
-- A downgrade's unused difference becomes credit that the next renewal consumes; an upgrade
-  whose payment fails keeps the new plan and moves the subscription to `past_due`
-  [`downgrade_with_credit`, `upgrade_mid_cycle`].
-- Two plan changes in the same period: each one prorates from the plan in effect at that
-  moment.
-- The clock moving between preview and confirm doesn't change the amount (the preview's
-  date is reused); a renewal in between makes the preview stale (409). The date comes back
-  as a signed token, so it can't be backdated to inflate a credit or a charge.
-- A plan change during a trial swaps the plan without moving money; the trial-end invoice is
-  at the new price.
-- A change scheduled for the end of the period is applied by the renewal, which bills the new
-  price; scheduling another replaces it, and canceling the subscription drops it.
-- Changing between monthly and yearly billing is refused (not supported) instead of being
-  prorated wrongly.
-- Partial refunds add up to exactly what was paid and not one cent more (service, database
-  and provider all refuse the extra cent); pending refunds count against the limit
-  [`partial_refund`].
-- A refund that fails at the provider releases its amount; a refund to the credit balance
-  is immediate and spent by the next invoice.
-- A refund's webhooks delivered twice don't count it twice; an invoice paid entirely with
-  credit has nothing refundable.
-- Dunning steps run exactly on days 0, 3, 7 and 14, whether the clock moves day by day or
-  two weeks at once; a job running twice doesn't repeat a step or a notification
-  [`full_dunning`].
-- A retry that fails again continues the same case; a working default card added during
-  dunning retries at once, and paying after the suspension restores access
-  [`failed_payment_recovery`].
-- Canceling during dunning closes the case but keeps the invoice owed; a case that runs out
-  marks the invoice uncollectible, so it can't be retried or refunded afterwards.
+  billed for the paused time ([billing_cycle_spec.rb](api/spec/services/billing_cycle_spec.rb)).
+- An invoice number rolled back with its invoice is reused, so the sequence has no gaps
+  ([invoice_number_spec.rb](api/spec/models/invoice_number_spec.rb)).
 - Only open invoices are ever sent for collection: the payment request itself refuses a
   paid or uncollectible invoice, whichever path asks. A canceled subscription is no longer
-  shown as "suspended, pay to restore".
+  shown as "suspended, pay to restore" ([dunning_spec.rb](api/spec/services/dunning_spec.rb), [invoices_spec.rb](api/spec/requests/api/v1/invoices_spec.rb)).
+
+### Plan changes and proration
+
+- A downgrade's unused difference becomes credit that the next renewal consumes; an upgrade
+  whose payment fails keeps the new plan and moves the subscription to `past_due`
+  [`downgrade_with_credit`, `upgrade_mid_cycle`] ([apply_spec.rb](api/spec/services/plan_changes/apply_spec.rb)).
+- Two plan changes in the same period: each one prorates from the plan in effect at that
+  moment ([apply_spec.rb](api/spec/services/plan_changes/apply_spec.rb)).
+- The clock moving between preview and confirm doesn't change the amount (the preview's
+  date is reused); a renewal in between makes the preview stale (409). The date comes back
+  as a signed token, so it can't be backdated to inflate a credit or a charge
+  ([apply_spec.rb](api/spec/services/plan_changes/apply_spec.rb), [plan_changes_spec.rb](api/spec/requests/api/v1/plan_changes_spec.rb)).
+- A plan change during a trial swaps the plan without moving money; the trial-end invoice is
+  at the new price ([apply_spec.rb](api/spec/services/plan_changes/apply_spec.rb)).
+- A change scheduled for the end of the period is applied by the renewal, which bills the new
+  price; scheduling another replaces it, and canceling the subscription drops it
+  ([apply_spec.rb](api/spec/services/plan_changes/apply_spec.rb), [billing_cycle_spec.rb](api/spec/services/billing_cycle_spec.rb)).
+- Changing between monthly and yearly billing is refused (not supported) instead of being
+  prorated wrongly ([apply_spec.rb](api/spec/services/plan_changes/apply_spec.rb)).
+
+### Refunds
+
+- Partial refunds add up to exactly what was paid and not one cent more (service, database
+  and provider all refuse the extra cent); pending refunds count against the limit
+  [`partial_refund`] ([create_spec.rb](api/spec/services/refunds/create_spec.rb)).
+- A refund that fails at the provider releases its amount; a refund to the credit balance
+  is immediate and spent by the next invoice ([create_spec.rb](api/spec/services/refunds/create_spec.rb)).
+- A refund's webhooks delivered twice don't count it twice; an invoice paid entirely with
+  credit has nothing refundable ([create_spec.rb](api/spec/services/refunds/create_spec.rb)).
+
+### Dunning
+
+- Dunning steps run exactly on days 0, 3, 7 and 14, whether the clock moves day by day or
+  two weeks at once; a job running twice doesn't repeat a step or a notification
+  [`full_dunning`] ([dunning_spec.rb](api/spec/services/dunning_spec.rb)).
+- A retry that fails again continues the same case; a working default card added during
+  dunning retries at once, and paying after the suspension restores access
+  [`failed_payment_recovery`] ([dunning_spec.rb](api/spec/services/dunning_spec.rb)).
+- Canceling during dunning closes the case but keeps the invoice owed; a case that runs out
+  marks the invoice uncollectible, so it can't be retried or refunded afterwards
+  ([dunning_spec.rb](api/spec/services/dunning_spec.rb)).
+
+### Reconciliation
+
 - A lost `invoice.paid` shows up as the missing event, the unpaid invoice and the wrong
   subscription status, with the event as evidence; redelivering it fixes all three
-  [`lost_webhook`].
+  [`lost_webhook`] ([run_spec.rb](api/spec/services/reconciliation/run_spec.rb)).
 - A correction the state machine doesn't allow (the provider says `active`, the engine
-  already `canceled`) is refused; the operator can only acknowledge it, with a note.
-- A change the provider was never told about (its sync failed) is caught and resent.
+  already `canceled`) is refused; the operator can only acknowledge it, with a note
+  ([run_spec.rb](api/spec/services/reconciliation/run_spec.rb), [reconciliation_spec.rb](api/spec/requests/api/v1/reconciliation_spec.rb)).
+- A change the provider was never told about (its sync failed) is caught and resent
+  ([run_spec.rb](api/spec/services/reconciliation/run_spec.rb)).
 - Reconciliation never reports differences that are only "in flight" (a change committed
   but not yet delivered), and the same difference found twice is recorded once; an
-  acknowledged difference isn't reported again unless its values change.
+  acknowledged difference isn't reported again unless its values change
+  ([run_spec.rb](api/spec/services/reconciliation/run_spec.rb)).
 - Correcting a status directly is blocked while the lost event behind it can still be
   redelivered; if a subscription leaves `past_due` without a payment anyway, its dunning case
-  closes instead of failing on day 14. A reconciliation error never stops the simulated clock.
+  closes instead of failing on day 14. A reconciliation error never stops the simulated clock
+  ([run_spec.rb](api/spec/services/reconciliation/run_spec.rb), [dunning_spec.rb](api/spec/services/dunning_spec.rb)).
 - Seeds and scenarios go through the same services as the operator, so the demo can't show
   a state the engine couldn't reach; every scenario also runs in the test suite, and the
-  seeded demo reconciles to zero differences.
-- Resetting the demo is the only way history is deleted: the append-only triggers are
-  dropped and recreated inside the same transaction, and the request must say `confirm:
-  "reset"`.
-- Money typed by the operator is parsed digit by digit, never through floating point, and an
-  ambiguous comma (`12,5`) is rejected instead of guessed.
+  seeded demo reconciles to zero differences
+  ([catalog_spec.rb](api/spec/services/scenarios/catalog_spec.rb), [seed_spec.rb](api/spec/services/demo/seed_spec.rb)).
 
-## Future improvements
+## Out of scope and future improvements
 
-Deliberately out of scope for now:
+Deliberately left out; each is a clean extension point rather than a rewrite:
 
 - Real Stripe integration and webhook signature verification (the gateway and the verifier
   are single swap points).
 - Disputes and chargebacks.
+- Proration when switching between monthly and yearly billing (refused today).
 - A hash chain on the audit log, so tampering outside the application is detectable.
-- Proration when switching between monthly and yearly billing.
-- Authentication and multiple operators; multiple currencies.
 - History charts on the dashboard (MRR over time, churn).
-
-## Roadmap
-
-Each feature is planned in [`docs/`](docs/) before it is built. The brief and every
-agreed decision live in [`docs/00-prompt.md`](docs/00-prompt.md).
-
-| # | Feature | Status |
-|---|---|---|
-| 01 | [Foundation](docs/01-foundation.md) | Done |
-| 02 | [Audit log](docs/02-audit-log.md) | Done |
-| 03 | [Catalog and customers](docs/03-catalog-and-customers.md) | Done |
-| 04 | [Subscription state machine](docs/04-subscription-state-machine.md) | Done |
-| 05 | [Webhook ingestion and idempotency](docs/05-webhook-ingestion.md) | Done |
-| 06 | [Fake payment provider](docs/06-fake-payment-provider.md) | Done |
-| 07 | [Invoicing and payments](docs/07-invoicing-and-payments.md) | Done |
-| 08 | [Plan changes and proration](docs/08-plan-changes-and-proration.md) | Done |
-| 09 | [Refunds](docs/09-refunds.md) | Done |
-| 10 | [Dunning](docs/10-dunning.md) | Done |
-| 11 | [Reconciliation](docs/11-reconciliation.md) | Done |
-| 12 | [Scenario Lab and seeds](docs/12-scenario-lab-and-seeds.md) | Done |
-| 13 | [Dashboard](docs/13-dashboard.md) | Done |
-| 14 | [Documentation and release](docs/14-documentation-and-release.md) | Planned |
+- Authentication and multiple operators; multiple currencies; taxes.
+- A hosted demo; the project runs locally.
 
 ## Project structure
 
 ```
-api/    Rails API: app/services (business logic), app/serializers, app/errors, spec/
-web/    Vue app: src/api (HTTP client), src/features (screens per domain), src/stores
-docs/   Brief, decisions and one plan per feature
-bin/    setup and dev scripts for both apps
+api/
+  app/controllers/api/v1/   thin JSON controllers (simulator/ only mounted with SIMULATOR_ENABLED)
+  app/models/               records, the state machine, and fake_stripe/ (the simulated provider)
+  app/services/             business logic, one folder per domain: subscriptions, invoices,
+                            plan_changes, proration, refunds, dunning, reconciliation, webhooks,
+                            ticks (daily jobs), scenarios and demo (seeds, reset), dashboard
+  app/serializers/          response shapes
+  lib/rubocop/cop/billing/  the cop that forbids reading real time
+  db/structure.sql          schema, including the append-only triggers
+  spec/                     RSpec: models, services, requests, scenarios
+web/
+  src/api/                  typed HTTP client, one module per resource
+  src/features/             screens per domain (subscriptions, invoices, dunning, ...)
+  src/components/           shared base components
+  src/stores/               the simulated clock (Pinia)
+docs/                       the brief, one plan per feature, architecture.md, screenshots
+bin/                        setup and dev scripts for both apps
 ```
+
+## How it was built
+
+The project was planned before it was coded: [`docs/00-prompt.md`](docs/00-prompt.md) holds
+the brief and every agreed decision, and each feature was specified in its own plan, then
+built, reviewed and committed before the next.
+
+| # | Feature |
+|---|---|
+| 01 | [Foundation](docs/01-foundation.md) |
+| 02 | [Audit log](docs/02-audit-log.md) |
+| 03 | [Catalog and customers](docs/03-catalog-and-customers.md) |
+| 04 | [Subscription state machine](docs/04-subscription-state-machine.md) |
+| 05 | [Webhook ingestion and idempotency](docs/05-webhook-ingestion.md) |
+| 06 | [Fake payment provider](docs/06-fake-payment-provider.md) |
+| 07 | [Invoicing and payments](docs/07-invoicing-and-payments.md) |
+| 08 | [Plan changes and proration](docs/08-plan-changes-and-proration.md) |
+| 09 | [Refunds](docs/09-refunds.md) |
+| 10 | [Dunning](docs/10-dunning.md) |
+| 11 | [Reconciliation](docs/11-reconciliation.md) |
+| 12 | [Scenario Lab and seeds](docs/12-scenario-lab-and-seeds.md) |
+| 13 | [Dashboard](docs/13-dashboard.md) |
+| 14 | [Documentation and release](docs/14-documentation-and-release.md) |
