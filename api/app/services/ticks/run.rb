@@ -9,6 +9,9 @@ module Ticks
       Ticks::EndTrials,
       Ticks::ResumePaused,
       Ticks::Renew,
+      # After renewals: a renewal that fails today opens its case (and runs day 0) through
+      # the webhook, and existing cases take their next step.
+      Ticks::RunDunningSteps,
       # Last: retries go out after everything above has been applied.
       Ticks::RetryProviderDeliveries
     ].freeze

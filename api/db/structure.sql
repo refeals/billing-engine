@@ -105,7 +105,7 @@ BEFORE DELETE ON invoice_line_items
 BEGIN
   SELECT RAISE(ABORT, 'invoice_line_items is append-only');
 END;
-CREATE TABLE IF NOT EXISTS "payment_attempts" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "invoice_id" integer NOT NULL, "payment_method_id" integer, "provider_charge_id" varchar NOT NULL, "status" varchar NOT NULL, "failure_code" varchar, "amount_cents" integer NOT NULL, "attempted_at" datetime(6) NOT NULL, "webhook_event_id" integer, "created_at" datetime(6) NOT NULL, CONSTRAINT "fk_rails_8a81ff14ab"
+CREATE TABLE IF NOT EXISTS "payment_attempts" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "invoice_id" integer NOT NULL, "payment_method_id" integer, "provider_charge_id" varchar NOT NULL, "status" varchar NOT NULL, "failure_code" varchar, "amount_cents" integer NOT NULL, "attempted_at" datetime(6) NOT NULL, "webhook_event_id" integer, "created_at" datetime(6) NOT NULL, "dunning_case_id" integer, "dunning_step_id" integer, CONSTRAINT "fk_rails_8a81ff14ab"
 FOREIGN KEY ("payment_method_id")
   REFERENCES "payment_methods" ("id")
 , CONSTRAINT "fk_rails_cba35add1a"
@@ -161,7 +161,52 @@ CREATE INDEX "index_invoices_on_customer_id" ON "invoices" ("customer_id");
 CREATE UNIQUE INDEX "index_invoices_on_provider_invoice_id" ON "invoices" ("provider_invoice_id");
 CREATE UNIQUE INDEX "index_invoices_on_number" ON "invoices" ("number");
 CREATE INDEX "index_invoices_on_status" ON "invoices" ("status");
+CREATE TABLE IF NOT EXISTS "dunning_cases" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "subscription_id" integer NOT NULL, "invoice_id" integer NOT NULL, "status" varchar DEFAULT 'open' NOT NULL, "started_at" datetime(6) NOT NULL, "last_step" varchar, "next_step" varchar, "next_step_at" datetime(6), "closed_at" datetime(6), "closed_reason" varchar, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL, CONSTRAINT "fk_rails_65ff534fa5"
+FOREIGN KEY ("invoice_id")
+  REFERENCES "invoices" ("id")
+, CONSTRAINT "fk_rails_e5d2f1622b"
+FOREIGN KEY ("subscription_id")
+  REFERENCES "subscriptions" ("id")
+, CONSTRAINT dunning_cases_status_known CHECK (status IN ('open', 'recovered', 'exhausted', 'canceled')));
+CREATE UNIQUE INDEX "index_dunning_cases_one_open_per_invoice" ON "dunning_cases" ("invoice_id") WHERE status = 'open';
+CREATE UNIQUE INDEX "index_dunning_cases_one_open_per_subscription" ON "dunning_cases" ("subscription_id") WHERE status = 'open';
+CREATE INDEX "index_dunning_cases_on_subscription_id" ON "dunning_cases" ("subscription_id");
+CREATE INDEX "index_dunning_cases_on_next_step_at" ON "dunning_cases" ("next_step_at");
+CREATE TABLE IF NOT EXISTS "dunning_steps" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "dunning_case_id" integer NOT NULL, "step" varchar NOT NULL, "scheduled_at" datetime(6) NOT NULL, "executed_at" datetime(6) NOT NULL, "outcome" varchar NOT NULL, "created_at" datetime(6) NOT NULL, CONSTRAINT "fk_rails_30ecfa6ff0"
+FOREIGN KEY ("dunning_case_id")
+  REFERENCES "dunning_cases" ("id")
+, CONSTRAINT dunning_steps_step_known CHECK (step IN ('day_0_notice', 'day_3_retry', 'day_7_suspend', 'day_14_cancel')));
+CREATE UNIQUE INDEX "index_dunning_steps_on_dunning_case_id_and_step" ON "dunning_steps" ("dunning_case_id", "step");
+CREATE TRIGGER dunning_steps_no_update
+BEFORE UPDATE ON dunning_steps
+BEGIN
+  SELECT RAISE(ABORT, 'dunning_steps is append-only');
+END;
+CREATE TRIGGER dunning_steps_no_delete
+BEFORE DELETE ON dunning_steps
+BEGIN
+  SELECT RAISE(ABORT, 'dunning_steps is append-only');
+END;
+CREATE TABLE IF NOT EXISTS "customer_notifications" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "customer_id" integer NOT NULL, "kind" varchar NOT NULL, "subject" varchar NOT NULL, "body" text NOT NULL, "dunning_case_id" integer, "dunning_step_id" integer, "sent_at" datetime(6) NOT NULL, "created_at" datetime(6) NOT NULL, CONSTRAINT "fk_rails_56ae8f022e"
+FOREIGN KEY ("customer_id")
+  REFERENCES "customers" ("id")
+);
+CREATE INDEX "index_customer_notifications_on_customer_id" ON "customer_notifications" ("customer_id");
+CREATE TRIGGER customer_notifications_no_update
+BEFORE UPDATE ON customer_notifications
+BEGIN
+  SELECT RAISE(ABORT, 'customer_notifications is append-only');
+END;
+CREATE TRIGGER customer_notifications_no_delete
+BEFORE DELETE ON customer_notifications
+BEGIN
+  SELECT RAISE(ABORT, 'customer_notifications is append-only');
+END;
 INSERT INTO "schema_migrations" (version) VALUES
+('20260924224221'),
+('20260924224220'),
+('20260924224218'),
+('20260924224216'),
 ('20260924223537'),
 ('20260924223535'),
 ('20260924222126'),

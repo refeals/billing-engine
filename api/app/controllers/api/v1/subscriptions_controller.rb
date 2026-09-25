@@ -13,7 +13,7 @@ module Api
       end
 
       def show
-        render json: SubscriptionSerializer.new(subscription)
+        render json: SubscriptionSerializer.new(subscription, detail: true)
       end
 
       def create
@@ -21,7 +21,7 @@ module Api
           customer: Customer.find(params.require(:customer_id)),
           plan: Plan.find(params.require(:plan_id))
         )
-        render json: SubscriptionSerializer.new(created), status: :created
+        render json: SubscriptionSerializer.new(created, detail: true), status: :created
       end
 
       def cancel
@@ -52,7 +52,7 @@ module Api
       end
 
       def run(action, **options)
-        render json: SubscriptionSerializer.new(action.call(subscription, lock_version: lock_version, **options))
+        render json: SubscriptionSerializer.new(action.call(subscription, lock_version: lock_version, **options), detail: true)
       end
 
       # Required on every change: it is how the API knows which version the operator saw.

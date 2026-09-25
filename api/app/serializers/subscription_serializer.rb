@@ -1,11 +1,14 @@
 class SubscriptionSerializer
-  def initialize(subscription)
+  # `detail` adds what the subscription screen needs and costs extra queries per row, so
+  # lists leave it out.
+  def initialize(subscription, detail: false)
     @subscription = subscription
+    @detail = detail
   end
 
   def as_json(*)
     subscription = @subscription
-    {
+    summary = {
       id: subscription.id,
       provider_subscription_id: subscription.provider_subscription_id,
       status: subscription.status,
@@ -19,16 +22,26 @@ class SubscriptionSerializer
       cancellation_reason: subscription.cancellation_reason,
       paused_at: subscription.paused_at&.iso8601,
       resumes_at: subscription.resumes_at&.iso8601,
-      access_suspended: subscription.access_suspended_at.present?,
+      access_suspended: subscription.access_suspended?,
       lock_version: subscription.lock_version,
       allowed_actions: subscription.allowed_actions,
-      default_payment_method: default_payment_method,
-      scheduled_plan_change: scheduled_plan_change,
       created_at: subscription.created_at.iso8601
     }
+    return summary unless @detail
+
+    summary.merge(
+      default_payment_method: default_payment_method,
+      scheduled_plan_change: scheduled_plan_change,
+      open_dunning_case: open_dunning_case
+    )
   end
 
   private
+
+  def open_dunning_case
+    dunning_case = DunningCase.open.find_by(subscription_id: @subscription.id)
+    dunning_case && DunningCaseSerializer.new(dunning_case, detail: true).as_json
+  end
 
   def scheduled_plan_change
     change = @subscription.plan_changes.scheduled.first

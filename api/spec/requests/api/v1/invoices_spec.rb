@@ -30,7 +30,10 @@ RSpec.describe "Invoices", type: :request do
   it "retries an unpaid invoice with the current default card" do
     customer = customer_with_card("pm_card_chargeDeclined")
     invoice = subscribe(customer).invoices.sole
-    PaymentMethods::Attach.call(customer, token: "pm_card_visa", exp_month: 12, exp_year: 2030, make_default: true)
+    # Swapped directly: through PaymentMethods::Attach the new card would trigger dunning's
+    # immediate retry, and this spec is about the retry endpoint itself.
+    customer.payment_methods.update_all(is_default: false)
+    create(:payment_method, customer: customer, is_default: true)
 
     post "/api/v1/invoices/#{invoice.id}/retry_payment", headers: { "Idempotency-Key" => "retry-1" }
 

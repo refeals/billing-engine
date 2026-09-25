@@ -1,0 +1,19 @@
+module Ticks
+  # Runs the dunning steps that fall due today, one per case.
+  class RunDunningSteps
+    def self.call(at:)
+      executed = 0
+      canceled = 0
+
+      DunningCase.open.where(next_step_at: ..at).includes(:invoice, subscription: :customer).find_each do |dunning_case|
+        step = dunning_case.next_step
+        next unless ::Dunning::RunStep.call(dunning_case, step, at: at)
+
+        executed += 1
+        canceled += 1 if step == "day_14_cancel"
+      end
+
+      { dunning_steps_executed: executed, subscriptions_canceled_by_dunning: canceled }
+    end
+  end
+end

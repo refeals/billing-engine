@@ -8,7 +8,8 @@ module Webhooks
 
         observe!(invoice)
         PaymentAttemptRecorder.record!(invoice: invoice, charge_id: object["charge"], status: "succeeded",
-          amount_cents: object["amount_paid"], payment_method_id: object["payment_method"], at: provider_created_at)
+          amount_cents: object["amount_paid"], payment_method_id: object["payment_method"], at: provider_created_at,
+          metadata: object["metadata"])
         return :processed if invoice.paid?
 
         before = invoice.slice(:status, :amount_paid_cents, :amount_due_cents)
@@ -17,7 +18,10 @@ module Webhooks
         Audit.record(event_type: "invoice.paid", subject: invoice, before: before,
           after: invoice.slice(:status, :amount_paid_cents, :amount_due_cents))
 
-        activate(invoice.subscription)
+        subscription = invoice.subscription
+        open_case = DunningCase.open.find_by(invoice_id: invoice.id)
+        Dunning::Recover.call(open_case, subscription: subscription) if open_case
+        activate(subscription)
         :processed
       end
 

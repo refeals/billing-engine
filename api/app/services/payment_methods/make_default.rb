@@ -21,6 +21,7 @@ module PaymentMethods
       previous_default&.update!(is_default: false)
       @payment_method.update!(is_default: true)
 
+      Dunning::RetryAfterCardUpdate.call(@payment_method.customer)
       Audit.record(event_type: "payment_method.default_changed", subject: @payment_method,
         before: { default_payment_method_id: previous_default&.provider_payment_method_id },
         after: { default_payment_method_id: @payment_method.provider_payment_method_id })

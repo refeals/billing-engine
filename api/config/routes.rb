@@ -36,7 +36,10 @@ Rails.application.routes.draw do
           post :make_default, on: :member
         end
         resources :credit_ledger_entries, only: %i[index create]
+        resources :notifications, only: :index
       end
+
+      resources :dunning_cases, only: %i[index show]
 
       post "webhooks/stripe", to: "webhooks#stripe"
       resources :webhook_events, only: %i[index show] do

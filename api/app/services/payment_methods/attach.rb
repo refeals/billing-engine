@@ -30,6 +30,8 @@ module PaymentMethods
         payment_method.is_default = become_default
         payment_method.save!
 
+        # A new default card is the customer's way of fixing a failed payment.
+        Dunning::RetryAfterCardUpdate.call(@customer) if become_default
         Audit.record(event_type: "payment_method.attached", subject: payment_method,
           after: payment_method.slice(:provider_payment_method_id, :brand, :last4, :exp_month, :exp_year, :is_default),
           context: { test_card_token: @token, behavior: payment_method.behavior })

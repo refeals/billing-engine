@@ -43,11 +43,11 @@ module FakeStripe
 
       # Tries to collect an invoice. Nothing is returned: like Stripe, the outcome is only
       # reported through events (charge.* then invoice.paid / invoice.payment_failed).
-      def pay_invoice(invoice:, subscription:, customer:, amount_cents:, payment_method:)
+      def pay_invoice(invoice:, subscription:, customer:, amount_cents:, payment_method:, metadata: {})
         # Nothing to collect (e.g. fully covered by credit): paid without a charge.
         if amount_cents.zero?
           emit_invoice_event("invoice.paid", invoice, subscription, customer,
-            status: "paid", amount_paid: 0, amount_due: 0, charge: nil, attempt_count: 0)
+            status: "paid", amount_paid: 0, amount_due: 0, charge: nil, attempt_count: 0, metadata: metadata)
           return nil
         end
 
@@ -58,18 +58,18 @@ module FakeStripe
         Outbox.emit(type: failure ? "charge.failed" : "charge.succeeded", subscription_id: subscription, object: {
           id: charge_id, object: "charge", invoice: invoice, customer: customer,
           payment_method: payment_method&.fetch(:id), amount: amount_cents,
-          status: failure ? "failed" : "succeeded", failure_code: failure
+          status: failure ? "failed" : "succeeded", failure_code: failure, metadata: metadata
         })
 
         if failure
           emit_invoice_event("invoice.payment_failed", invoice, subscription, customer,
             status: "open", amount_paid: 0, amount_due: amount_cents, charge: charge_id,
             payment_method: payment_method&.fetch(:id), attempt_count: attempt_count,
-            last_payment_error: { code: failure })
+            last_payment_error: { code: failure }, metadata: metadata)
         else
           emit_invoice_event("invoice.paid", invoice, subscription, customer,
             status: "paid", amount_paid: amount_cents, amount_due: 0, charge: charge_id,
-            payment_method: payment_method&.fetch(:id), attempt_count: attempt_count)
+            payment_method: payment_method&.fetch(:id), attempt_count: attempt_count, metadata: metadata)
         end
         nil
       end

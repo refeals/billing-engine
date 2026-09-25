@@ -69,6 +69,13 @@ class Subscription < ApplicationRecord
     end
   end
 
+  # Suspension only means something while the subscription is past_due and payable. Once it
+  # is canceled (by dunning or otherwise), access is gone for good, whatever the column says;
+  # the column is kept as history.
+  def access_suspended?
+    status == "past_due" && access_suspended_at.present?
+  end
+
   def action_allowed?(action)
     allowed_actions.include?(action)
   end

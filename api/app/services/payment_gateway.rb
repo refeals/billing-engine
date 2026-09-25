@@ -7,7 +7,7 @@
 #   create_subscription(snapshot:)                               → "sub_…"
 #   update_subscription(id, snapshot:)                           → nil
 #   create_invoice(snapshot:)                                    → "in_…"
-#   pay_invoice(invoice:, subscription:, customer:, amount_cents:, payment_method:) → nil
+#   pay_invoice(invoice:, subscription:, customer:, amount_cents:, payment_method:, metadata:) → nil
 #   refund(charge:, amount_cents:, reason:, payment_method:)     → "re_…"
 #
 # Return values are identifiers and card details only. Outcomes (a charge succeeded, a

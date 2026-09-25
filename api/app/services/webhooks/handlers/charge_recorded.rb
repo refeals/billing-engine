@@ -7,7 +7,8 @@ module Webhooks
         invoice = find_invoice!(object["invoice"])
         PaymentAttemptRecorder.record!(
           invoice: invoice, charge_id: object["id"], status: object["status"], amount_cents: object["amount"],
-          failure_code: object["failure_code"], payment_method_id: object["payment_method"], at: provider_created_at
+          failure_code: object["failure_code"], payment_method_id: object["payment_method"], at: provider_created_at,
+          metadata: object["metadata"]
         )
         :processed
       end

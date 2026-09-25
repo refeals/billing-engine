@@ -38,6 +38,8 @@ module Subscriptions
           @subscription.plan_changes.scheduled.each do |plan_change|
             PlanChanges::CancelScheduled.call(plan_change, reason: "subscription_canceled")
           end
+          # Dunning's own day-14 cancellation closed its case beforehand, as "exhausted".
+          Dunning::CloseForCancellation.call(@subscription)
         end
         @subscription
       end
