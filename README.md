@@ -12,6 +12,9 @@ weeks of billing in seconds, so every hard case can be reproduced with one click
 fictional, and every visitor shares the same simulated clock, so what you see may have been
 moved by someone else's scenario.
 
+New here? [FEATURES.md](FEATURES.md) explains every screen and the expected behavior in one
+page.
+
 **What to look at**
 
 - A strict [subscription state machine](#subscription-lifecycle) with a single write path.
