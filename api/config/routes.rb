@@ -41,6 +41,11 @@ Rails.application.routes.draw do
 
       resources :dunning_cases, only: %i[index show]
 
+      resources :reconciliation_runs, only: %i[index show create]
+      resources :reconciliation_discrepancies, only: :index do
+        post :resolve, on: :member
+      end
+
       post "webhooks/stripe", to: "webhooks#stripe"
       resources :webhook_events, only: %i[index show] do
         post :reprocess, on: :member

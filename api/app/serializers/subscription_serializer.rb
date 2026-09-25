@@ -32,7 +32,8 @@ class SubscriptionSerializer
     summary.merge(
       default_payment_method: default_payment_method,
       scheduled_plan_change: scheduled_plan_change,
-      open_dunning_case: open_dunning_case
+      open_dunning_case: open_dunning_case,
+      open_discrepancies_count: ReconciliationDiscrepancy.open.where(subscription_id: @subscription.id).count
     )
   end
 

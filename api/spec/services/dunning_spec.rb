@@ -141,6 +141,18 @@ RSpec.describe "Dunning" do
     expect(FakeStripe::MockedWebhookEvent.count).to eq(events_before)
   end
 
+  it "closes quietly if the subscription left past_due without a payment (e.g. a correction)" do
+    subscription = failing_subscription
+    Current.set(actor: "reconciliation") do
+      Subscriptions::Transition.call(subscription.reload, to: "active", reason: "reconciliation_correction")
+    end
+
+    expect { advance_days(14) }.not_to raise_error
+
+    expect(DunningCase.sole).to have_attributes(status: "canceled", closed_reason: "subscription_no_longer_past_due")
+    expect(subscription.reload.status).to eq("active")
+  end
+
   it "no longer lets a past_due subscription linger past a monthly period" do
     subscription = failing_subscription
 

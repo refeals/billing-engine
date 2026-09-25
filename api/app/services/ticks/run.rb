@@ -12,8 +12,10 @@ module Ticks
       # After renewals: a renewal that fails today opens its case (and runs day 0) through
       # the webhook, and existing cases take their next step.
       Ticks::RunDunningSteps,
-      # Last: retries go out after everything above has been applied.
-      Ticks::RetryProviderDeliveries
+      # Retries go out after everything above has been applied.
+      Ticks::RetryProviderDeliveries,
+      # Last: checks the day's end state against the provider's history.
+      Ticks::Reconcile
     ].freeze
 
     # Each step responds to `.call(at:)` and returns a hash of counters for the tick report.

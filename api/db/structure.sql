@@ -202,7 +202,26 @@ BEFORE DELETE ON customer_notifications
 BEGIN
   SELECT RAISE(ABORT, 'customer_notifications is append-only');
 END;
+CREATE TABLE IF NOT EXISTS "reconciliation_runs" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "triggered_by" varchar NOT NULL, "scope_subscription_id" integer, "started_at" datetime(6) NOT NULL, "finished_at" datetime(6), "subscriptions_checked" integer DEFAULT 0 NOT NULL, "discrepancies_found" integer DEFAULT 0 NOT NULL, "discrepancies_opened" integer DEFAULT 0 NOT NULL, "discrepancies_cleared" integer DEFAULT 0 NOT NULL, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL, CONSTRAINT "fk_rails_c86963ea59"
+FOREIGN KEY ("scope_subscription_id")
+  REFERENCES "subscriptions" ("id")
+);
+CREATE TABLE IF NOT EXISTS "reconciliation_discrepancies" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "first_run_id" integer NOT NULL, "last_seen_run_id" integer NOT NULL, "subscription_id" integer NOT NULL, "kind" varchar NOT NULL, "subject_key" varchar NOT NULL, "field" varchar, "internal_value" varchar, "expected_value" varchar, "evidence_event_ids" json DEFAULT '[]' NOT NULL, "status" varchar DEFAULT 'open' NOT NULL, "resolution" varchar, "resolution_note" text, "resolved_at" datetime(6), "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL, CONSTRAINT "fk_rails_14765dffda"
+FOREIGN KEY ("first_run_id")
+  REFERENCES "reconciliation_runs" ("id")
+, CONSTRAINT "fk_rails_1daca71d85"
+FOREIGN KEY ("last_seen_run_id")
+  REFERENCES "reconciliation_runs" ("id")
+, CONSTRAINT "fk_rails_cc5be44c18"
+FOREIGN KEY ("subscription_id")
+  REFERENCES "subscriptions" ("id")
+, CONSTRAINT reconciliation_discrepancies_kind_known CHECK (kind IN ('status_mismatch', 'plan_mismatch', 'period_mismatch', 'missing_invoice', 'invoice_status_mismatch', 'invoice_amount_mismatch', 'undelivered_event', 'failed_event')), CONSTRAINT reconciliation_discrepancies_status_known CHECK (status IN ('open', 'resolved', 'acknowledged', 'cleared')));
+CREATE INDEX "index_reconciliation_discrepancies_on_subscription_id" ON "reconciliation_discrepancies" ("subscription_id");
+CREATE UNIQUE INDEX "index_reconciliation_discrepancies_one_open_per_subject" ON "reconciliation_discrepancies" ("subscription_id", "kind", "subject_key") WHERE status = 'open';
+CREATE INDEX "index_reconciliation_discrepancies_on_status" ON "reconciliation_discrepancies" ("status");
 INSERT INTO "schema_migrations" (version) VALUES
+('20260925103203'),
+('20260925103201'),
 ('20260924224221'),
 ('20260924224220'),
 ('20260924224218'),
