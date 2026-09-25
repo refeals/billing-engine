@@ -82,7 +82,7 @@ CREATE UNIQUE INDEX "index_webhook_events_on_provider_event_id" ON "webhook_even
 CREATE INDEX "index_webhook_events_on_provider_object_id" ON "webhook_events" ("provider_object_id");
 CREATE INDEX "index_webhook_events_on_processing_status" ON "webhook_events" ("processing_status");
 CREATE INDEX "index_webhook_events_on_event_type" ON "webhook_events" ("event_type");
-CREATE TABLE IF NOT EXISTS "mocked_webhook_events" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "event_id" varchar NOT NULL, "event_type" varchar NOT NULL, "api_version" varchar NOT NULL, "payload" json NOT NULL, "provider_object_id" varchar NOT NULL, "provider_subscription_id" varchar, "provider_created_at" datetime(6) NOT NULL, "delivery_mode" varchar DEFAULT 'deliver' NOT NULL, "copies" integer DEFAULT 1 NOT NULL, "delivery_status" varchar DEFAULT 'pending' NOT NULL, "delivery_count" integer DEFAULT 0 NOT NULL, "delivery_attempts" integer DEFAULT 0 NOT NULL, "last_delivery_result" varchar, "last_delivered_at" datetime(6), "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL, CONSTRAINT mocked_webhook_events_delivery_status_known CHECK (delivery_status IN ('pending', 'delivered', 'dropped')), CONSTRAINT mocked_webhook_events_delivery_mode_known CHECK (delivery_mode IN ('deliver', 'drop')), CONSTRAINT mocked_webhook_events_copies_range CHECK (copies BETWEEN 1 AND 5));
+CREATE TABLE IF NOT EXISTS "mocked_webhook_events" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "event_id" varchar NOT NULL, "event_type" varchar NOT NULL, "api_version" varchar NOT NULL, "payload" json NOT NULL, "provider_object_id" varchar NOT NULL, "provider_subscription_id" varchar, "provider_created_at" datetime(6) NOT NULL, "delivery_mode" varchar DEFAULT 'deliver' NOT NULL, "copies" integer DEFAULT 1 NOT NULL, "delivery_status" varchar DEFAULT 'pending' NOT NULL, "delivery_count" integer DEFAULT 0 NOT NULL, "delivery_attempts" integer DEFAULT 0 NOT NULL, "last_delivery_result" varchar, "last_delivered_at" datetime(6), "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL, "scenario_run_id" integer, CONSTRAINT mocked_webhook_events_delivery_status_known CHECK (delivery_status IN ('pending', 'delivered', 'dropped')), CONSTRAINT mocked_webhook_events_delivery_mode_known CHECK (delivery_mode IN ('deliver', 'drop')), CONSTRAINT mocked_webhook_events_copies_range CHECK (copies BETWEEN 1 AND 5));
 CREATE UNIQUE INDEX "index_mocked_webhook_events_on_event_id" ON "mocked_webhook_events" ("event_id");
 CREATE INDEX "index_mocked_webhook_events_on_provider_subscription_id" ON "mocked_webhook_events" ("provider_subscription_id");
 CREATE INDEX "index_mocked_webhook_events_on_delivery_status" ON "mocked_webhook_events" ("delivery_status");
@@ -219,7 +219,18 @@ FOREIGN KEY ("subscription_id")
 CREATE INDEX "index_reconciliation_discrepancies_on_subscription_id" ON "reconciliation_discrepancies" ("subscription_id");
 CREATE UNIQUE INDEX "index_reconciliation_discrepancies_one_open_per_subject" ON "reconciliation_discrepancies" ("subscription_id", "kind", "subject_key") WHERE status = 'open';
 CREATE INDEX "index_reconciliation_discrepancies_on_status" ON "reconciliation_discrepancies" ("status");
+CREATE TABLE IF NOT EXISTS "scenario_runs" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "scenario_key" varchar NOT NULL, "status" varchar DEFAULT 'running' NOT NULL, "customer_id" integer, "subscription_id" integer, "log" json DEFAULT '[]' NOT NULL, "error" text, "started_at" datetime(6) NOT NULL, "finished_at" datetime(6), "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL, CONSTRAINT "fk_rails_44ca852baa"
+FOREIGN KEY ("subscription_id")
+  REFERENCES "subscriptions" ("id")
+, CONSTRAINT "fk_rails_28807a03ec"
+FOREIGN KEY ("customer_id")
+  REFERENCES "customers" ("id")
+, CONSTRAINT scenario_runs_status_known CHECK (status IN ('running', 'passed', 'failed')));
+CREATE INDEX "index_scenario_runs_on_scenario_key" ON "scenario_runs" ("scenario_key");
+CREATE INDEX "index_mocked_webhook_events_on_scenario_run_id" ON "mocked_webhook_events" ("scenario_run_id");
 INSERT INTO "schema_migrations" (version) VALUES
+('20260925112156'),
+('20260925112154'),
 ('20260925103203'),
 ('20260925103201'),
 ('20260924224221'),

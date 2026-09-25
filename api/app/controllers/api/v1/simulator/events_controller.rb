@@ -11,6 +11,7 @@ module Api
         def index
           scope = FakeStripe::MockedWebhookEvent.newest_first
           scope = scope.where(delivery_status: delivery_status_filter) if params[:delivery_status].present?
+          scope = scope_to_scenario_run(scope) if params[:scenario_run_id].present?
           events, meta = paginate(scope)
 
           render json: { data: serialize(events), meta: meta }
@@ -44,6 +45,13 @@ module Api
         end
 
         private
+
+        # The clock is shared, so other subscriptions renew during a scenario; only the events of
+        # the scenario's own subscription belong to its run.
+        def scope_to_scenario_run(scope)
+          scenario_run = ScenarioRun.find(params[:scenario_run_id])
+          scope.where(scenario_run_id: scenario_run.id, provider_subscription_id: scenario_run.subscription&.provider_subscription_id)
+        end
 
         def serialize(events)
           inbox_ids = MockedWebhookEventSerializer.inbox_ids_for(events)

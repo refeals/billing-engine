@@ -43,6 +43,15 @@ module BillingClock
       end
     end
 
+    # Moves the clock to a fixed date, backwards if needed. Only the demo uses it: the seeds
+    # replay a fixed calendar, so screenshots and README examples stay valid.
+    def travel_to!(time)
+      current = clock
+      current.rewind_allowed = true
+      current.update!(current_time: time)
+      current.current_time
+    end
+
     private
 
     # Two first reads can race to create the row. create_or_find_by! relies on the primary

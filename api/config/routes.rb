@@ -61,6 +61,11 @@ Rails.application.routes.draw do
           resources :events, only: %i[index create] do
             post :deliver, on: :member
           end
+          resources :scenarios, only: :index do
+            post :run, on: :member
+            get :runs, on: :collection
+          end
+          resource :reset, only: :create
         end
       end
     end

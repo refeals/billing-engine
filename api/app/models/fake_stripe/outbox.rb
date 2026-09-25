@@ -8,6 +8,7 @@ module FakeStripe
     # `delivery: "drop"` records the event but never sends it (a lost webhook); `copies`
     # sends the same event several times (duplicate deliveries).
     def self.emit(type:, object:, subscription_id: nil, delivery: "deliver", copies: 1)
+      delivery = "drop" if drop_requested?(type)
       event_id = ProviderIds.generate("evt")
       created_at = BillingClock.now
 
@@ -21,6 +22,7 @@ module FakeStripe
         delivery_mode: delivery,
         delivery_status: delivery == "drop" ? "dropped" : "pending",
         copies: copies,
+        scenario_run_id: Current.scenario_run&.id,
         payload: {
           id: event_id, object: "event", type: type, api_version: API_VERSION,
           created: created_at.to_i, data: { object: object }
@@ -29,5 +31,16 @@ module FakeStripe
       Dispatcher.schedule_flush unless event.dropped?
       event
     end
+
+    # A scenario can ask the provider to lose the next event of a type (one shot), to show
+    # what a lost webhook does to the engine.
+    def self.drop_requested?(type)
+      types = Current.drop_event_types
+      return false unless types&.include?(type)
+
+      Current.drop_event_types = types - [ type ]
+      true
+    end
+    private_class_method :drop_requested?
   end
 end
