@@ -147,6 +147,36 @@ Oct 1 – Nov 1 (31 days) upgrades to $99/month on Oct 11, with 21 days left:
   answers 409 instead of charging a different amount.
 - Each line is rounded on its own, so invoice lines always add up exactly to the net shown.
 
+## Dunning
+
+When a payment fails, the subscription goes `past_due` and a dunning case opens:
+
+| Day | Step | What happens |
+|---|---|---|
+| 0 | notice | the customer is told the payment failed |
+| 3 | retry | the card is charged again |
+| 7 | suspend | access is suspended (the subscription stays `past_due`) |
+| 14 | cancel | the subscription is canceled, the invoice becomes uncollectible |
+
+```mermaid
+sequenceDiagram
+    participant Provider as Fake Stripe
+    participant Engine
+    participant Tick as Daily tick
+    Provider-->>Engine: invoice.payment_failed
+    Engine->>Engine: past_due, case opened, day-0 notice
+    Tick->>Engine: day 3: retry (charge with dunning metadata)
+    Provider-->>Engine: invoice.payment_failed again (same case)
+    Tick->>Engine: day 7: suspend access
+    Note over Engine: a working default card at any point retries at once
+    Provider-->>Engine: invoice.paid
+    Engine->>Engine: case recovered, access restored, active
+```
+
+Each step runs once, on its day (days are simulated, one tick per day). A payment at any
+point ends the case and the remaining steps never run. What the customer would have been
+emailed is kept in an outbox (`customer_notifications`).
+
 ## Refunds
 
 A paid invoice can be refunded in full or in parts, up to what the card actually paid:
@@ -388,6 +418,15 @@ curl -s -X POST localhost:3001/api/v1/webhooks/stripe \
   is immediate and spent by the next invoice.
 - A refund's webhooks delivered twice don't count it twice; an invoice paid entirely with
   credit has nothing refundable.
+- Dunning steps run exactly on days 0, 3, 7 and 14, whether the clock moves day by day or
+  two weeks at once; a job running twice doesn't repeat a step or a notification.
+- A retry that fails again continues the same case; a working default card added during
+  dunning retries at once, and paying after the suspension restores access.
+- Canceling during dunning closes the case but keeps the invoice owed; a case that runs out
+  marks the invoice uncollectible, so it can't be retried or refunded afterwards.
+- Only open invoices are ever sent for collection: the payment request itself refuses a
+  paid or uncollectible invoice, whichever path asks. A canceled subscription is no longer
+  shown as "suspended, pay to restore".
 - Money typed by the operator is parsed digit by digit, never through floating point, and an
   ambiguous comma (`12,5`) is rejected instead of guessed.
 
@@ -418,7 +457,7 @@ agreed decision live in [`docs/00-prompt.md`](docs/00-prompt.md).
 | 07 | [Invoicing and payments](docs/07-invoicing-and-payments.md) | Done |
 | 08 | [Plan changes and proration](docs/08-plan-changes-and-proration.md) | Done |
 | 09 | [Refunds](docs/09-refunds.md) | Done |
-| 10 | [Dunning](docs/10-dunning.md) | Planned |
+| 10 | [Dunning](docs/10-dunning.md) | Done |
 | 11 | [Reconciliation](docs/11-reconciliation.md) | Planned |
 | 12 | [Scenario Lab and seeds](docs/12-scenario-lab-and-seeds.md) | Planned |
 | 13 | [Dashboard](docs/13-dashboard.md) | Planned |

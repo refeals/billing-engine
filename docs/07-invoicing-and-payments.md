@@ -81,7 +81,7 @@ and subscriptions created without a trial get their first invoice.
   replaced by a new one starting at the resume moment, billed right away.
 - **Gap-free numbers** via a per-year counter incremented in the invoice's transaction.
 
-### Known limitation (closed by plan 10)
+### Known limitation (closed by plan 10: dunning cancels on day 14)
 A subscription that stays `past_due` longer than a whole period and then recovers is billed
 for the elapsed periods, one per daily tick. Dunning (plan 10) cancels a `past_due`
 subscription on day 14, so with monthly and yearly plans this can't happen once it exists.

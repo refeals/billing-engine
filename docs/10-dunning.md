@@ -51,6 +51,20 @@ stops as soon as the customer pays.
 ### Endpoints
 From `00-prompt.md` §9, **Dunning**, plus `GET /customers/:id/notifications`.
 
+### Decisions taken during implementation
+- **One running case per invoice and per subscription** (partial unique indexes); the day-3
+  retry failing again continues the same case.
+- **Steps are idempotent by construction:** the step row is inserted first under a unique
+  `(case, step)` index; a rerun inserts nothing and does nothing.
+- **Attempts are linked through Stripe-style metadata** (`dunning_case_id`,
+  `dunning_step_id`) sent with the charge and echoed back on its events. The two new
+  `payment_attempts` columns are added with `ALTER TABLE ADD COLUMN`, so the table isn't
+  rebuilt and keeps its append-only triggers.
+- **Day 14 closes the case first**, marks the invoice `uncollectible` (no more retries or
+  refunds), then cancels; any other cancellation closes open cases as `canceled` and leaves
+  the invoice open (still owed).
+- **Notifications are an append-only outbox**; nothing is emailed.
+
 ## Frontend
 
 - Screen 13 **Dunning board**: columns per stage (`day_0`, `day_3`, `day_7 suspended`,

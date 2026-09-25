@@ -287,9 +287,11 @@ an `Idempotency-Key` header.
   `already_processed`.
 
 ### Dunning
-- `GET /dunning_cases?status=open`
+- `GET /dunning_cases?status=open|closed&page=`
 - `GET /dunning_cases/:id`
-  Response: `{ "status": "open", "current_step": "day_3_retry", "next_step_at": "...", "steps": [ { "step": "day_0_notice", "executed_at": "...", "outcome": "notified" } ] }`
+  Response: `{ "status": "open", "last_step": "day_3_retry", "next_step": "day_7_suspend", "next_step_at": "...", "steps": [ { "step": "day_0_notice", "executed_at": "...", "outcome": "customer_notified" } ], "notifications": [...], "payment_attempts": [...] }`
+- `GET /customers/:id/notifications` — the mocked email outbox.
+- The subscription detail includes `open_dunning_case`.
 
 ### Reconciliation
 - `POST /reconciliation_runs` — Request: `{ "subscription_id": null }` (null = everything).
@@ -436,9 +438,10 @@ someone calls `update_column`.
 ### Dunning
 
 **dunning_cases**
-- `subscription_id`, `invoice_id` (unique while open)
+- `subscription_id`, `invoice_id` (each unique while open: one running case per invoice and
+  per subscription)
 - `status`: `open` / `recovered` / `exhausted` / `canceled`
-- `started_at`, `current_step`, `next_step_at`, `closed_at`, `closed_reason`
+- `started_at`, `last_step`, `next_step`, `next_step_at`, `closed_at`, `closed_reason`
 
 **dunning_steps** (append-only)
 - `dunning_case_id`, `step` (`day_0_notice` / `day_3_retry` / `day_7_suspend` / `day_14_cancel`)
@@ -446,7 +449,10 @@ someone calls `update_column`.
 - **unique (`dunning_case_id`, `step`)** — if the job runs twice, the step doesn't repeat.
 
 **customer_notifications** (mocked email outbox)
-- `customer_id`, `kind`, `subject`, `body`, `dunning_step_id` (nullable), `sent_at`
+- `customer_id`, `kind`, `subject`, `body`, `dunning_case_id`, `dunning_step_id` (nullable),
+  `sent_at`; append-only
+- `payment_attempts` also records `dunning_case_id` / `dunning_step_id`, echoed back by the
+  provider from the charge's metadata.
 
 ### Webhooks and idempotency
 
