@@ -1,0 +1,14 @@
+#!/bin/bash -e
+
+# jemalloc keeps Ruby's memory flat on a small VPS.
+if [ -z "${LD_PRELOAD+x}" ]; then
+  LD_PRELOAD=$(find /usr/lib -name libjemalloc.so.2 -print -quit)
+  export LD_PRELOAD
+fi
+
+# Creates and seeds the databases on an empty volume, migrates on later deploys.
+if [ "$1" == "./bin/rails" ] && [ "$2" == "server" ]; then
+  ./bin/rails db:prepare
+fi
+
+exec "${@}"
