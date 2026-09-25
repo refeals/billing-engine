@@ -2,6 +2,9 @@ require "rails_helper"
 
 RSpec.describe Api::V1::BaseController, type: :controller do
   controller(described_class) do
+    # This spec is about error rendering; authentication has its own request specs.
+    allow_unauthenticated_access
+
     def index
       case params[:failure]
       when "domain" then raise DomainError.new("Plan is archived", code: "plan_archived", details: { plan_id: 1 })

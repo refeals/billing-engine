@@ -11,6 +11,7 @@ module Demo
     LAST_DAY = 70
 
     def call
+      User.ensure!
       Current.set(actor: "admin") do
         BillingClock.travel_to!(START)
         @plans = Catalog.ensure!

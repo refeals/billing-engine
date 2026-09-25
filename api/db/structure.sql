@@ -7,16 +7,6 @@ CREATE INDEX "index_billing_events_on_subscription_id_and_occurred_at" ON "billi
 CREATE INDEX "index_billing_events_on_customer_id_and_occurred_at" ON "billing_events" ("customer_id", "occurred_at");
 CREATE INDEX "index_billing_events_on_event_type" ON "billing_events" ("event_type");
 CREATE INDEX "index_billing_events_on_occurred_at" ON "billing_events" ("occurred_at");
-CREATE TRIGGER billing_events_no_update
-BEFORE UPDATE ON billing_events
-BEGIN
-  SELECT RAISE(ABORT, 'billing_events is append-only');
-END;
-CREATE TRIGGER billing_events_no_delete
-BEFORE DELETE ON billing_events
-BEGIN
-  SELECT RAISE(ABORT, 'billing_events is append-only');
-END;
 CREATE TABLE IF NOT EXISTS "plans" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "code" varchar NOT NULL, "name" varchar NOT NULL, "amount_cents" integer NOT NULL, "currency" varchar DEFAULT 'USD' NOT NULL, "interval" varchar NOT NULL, "trial_days" integer DEFAULT 0 NOT NULL, "archived_at" datetime(6), "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL, CONSTRAINT plans_amount_positive CHECK (amount_cents > 0), CONSTRAINT plans_interval_known CHECK (interval IN ('month', 'year')), CONSTRAINT plans_currency_usd CHECK (currency = 'USD'), CONSTRAINT plans_trial_days_non_negative CHECK (trial_days >= 0));
 CREATE UNIQUE INDEX "index_plans_on_code" ON "plans" ("code");
 CREATE TABLE IF NOT EXISTS "customers" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "name" varchar NOT NULL, "email" varchar NOT NULL, "provider_customer_id" varchar NOT NULL, "credit_balance_cents" integer DEFAULT 0 NOT NULL, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL, CONSTRAINT customers_credit_balance_non_negative CHECK (credit_balance_cents >= 0));
@@ -34,16 +24,6 @@ FOREIGN KEY ("customer_id")
   REFERENCES "customers" ("id")
 , CONSTRAINT credit_ledger_entries_amount_non_zero CHECK (amount_cents <> 0), CONSTRAINT credit_ledger_entries_balance_non_negative CHECK (balance_after_cents >= 0), CONSTRAINT credit_ledger_entries_reason_known CHECK (reason IN ('downgrade_proration', 'applied_to_invoice', 'refund_to_balance', 'manual_adjustment')));
 CREATE INDEX "index_credit_ledger_entries_on_customer_id_and_id" ON "credit_ledger_entries" ("customer_id", "id");
-CREATE TRIGGER credit_ledger_entries_no_update
-BEFORE UPDATE ON credit_ledger_entries
-BEGIN
-  SELECT RAISE(ABORT, 'credit_ledger_entries is append-only');
-END;
-CREATE TRIGGER credit_ledger_entries_no_delete
-BEFORE DELETE ON credit_ledger_entries
-BEGIN
-  SELECT RAISE(ABORT, 'credit_ledger_entries is append-only');
-END;
 CREATE TABLE IF NOT EXISTS "subscriptions" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "customer_id" integer NOT NULL, "plan_id" integer NOT NULL, "provider_subscription_id" varchar NOT NULL, "status" varchar NOT NULL, "current_period_start" datetime(6) NOT NULL, "current_period_end" datetime(6) NOT NULL, "trial_ends_at" datetime(6), "cancel_at_period_end" boolean DEFAULT FALSE NOT NULL, "canceled_at" datetime(6), "cancellation_reason" varchar, "paused_at" datetime(6), "resumes_at" datetime(6), "access_suspended_at" datetime(6), "last_provider_event_at" datetime(6), "lock_version" integer DEFAULT 0 NOT NULL, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL, CONSTRAINT "fk_rails_63d3df128b"
 FOREIGN KEY ("plan_id")
   REFERENCES "plans" ("id")
@@ -65,16 +45,6 @@ FOREIGN KEY ("billing_event_id")
   REFERENCES "billing_events" ("id")
 );
 CREATE INDEX "idx_on_subscription_id_occurred_at_70bdbb273b" ON "subscription_state_transitions" ("subscription_id", "occurred_at");
-CREATE TRIGGER subscription_state_transitions_no_update
-BEFORE UPDATE ON subscription_state_transitions
-BEGIN
-  SELECT RAISE(ABORT, 'subscription_state_transitions is append-only');
-END;
-CREATE TRIGGER subscription_state_transitions_no_delete
-BEFORE DELETE ON subscription_state_transitions
-BEGIN
-  SELECT RAISE(ABORT, 'subscription_state_transitions is append-only');
-END;
 CREATE TABLE IF NOT EXISTS "idempotency_keys" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "key" varchar NOT NULL, "request_fingerprint" varchar NOT NULL, "response_status" integer, "response_body" text, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL);
 CREATE UNIQUE INDEX "index_idempotency_keys_on_key" ON "idempotency_keys" ("key");
 CREATE TABLE IF NOT EXISTS "webhook_events" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "provider_event_id" varchar NOT NULL, "event_type" varchar NOT NULL, "provider_object_id" varchar NOT NULL, "payload" json NOT NULL, "provider_created_at" datetime(6) NOT NULL, "received_at" datetime(6) NOT NULL, "processing_status" varchar DEFAULT 'received' NOT NULL, "processed_at" datetime(6), "attempts" integer DEFAULT 0 NOT NULL, "last_error" text, "duplicate_deliveries_count" integer DEFAULT 0 NOT NULL, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL, CONSTRAINT webhook_events_processing_status_known CHECK (processing_status IN ('received', 'processed', 'failed', 'skipped_stale', 'ignored_unhandled')));
@@ -95,16 +65,6 @@ FOREIGN KEY ("invoice_id")
   REFERENCES "invoices" ("id")
 , CONSTRAINT invoice_line_items_kind_known CHECK (kind IN ('subscription', 'proration_credit', 'proration_charge', 'credit_applied')));
 CREATE INDEX "index_invoice_line_items_on_invoice_id" ON "invoice_line_items" ("invoice_id");
-CREATE TRIGGER invoice_line_items_no_update
-BEFORE UPDATE ON invoice_line_items
-BEGIN
-  SELECT RAISE(ABORT, 'invoice_line_items is append-only');
-END;
-CREATE TRIGGER invoice_line_items_no_delete
-BEFORE DELETE ON invoice_line_items
-BEGIN
-  SELECT RAISE(ABORT, 'invoice_line_items is append-only');
-END;
 CREATE TABLE IF NOT EXISTS "payment_attempts" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "invoice_id" integer NOT NULL, "payment_method_id" integer, "provider_charge_id" varchar NOT NULL, "status" varchar NOT NULL, "failure_code" varchar, "amount_cents" integer NOT NULL, "attempted_at" datetime(6) NOT NULL, "webhook_event_id" integer, "created_at" datetime(6) NOT NULL, "dunning_case_id" integer, "dunning_step_id" integer, CONSTRAINT "fk_rails_8a81ff14ab"
 FOREIGN KEY ("payment_method_id")
   REFERENCES "payment_methods" ("id")
@@ -115,16 +75,6 @@ FOREIGN KEY ("invoice_id")
 CREATE INDEX "index_payment_attempts_on_invoice_id" ON "payment_attempts" ("invoice_id");
 CREATE INDEX "index_payment_attempts_on_payment_method_id" ON "payment_attempts" ("payment_method_id");
 CREATE UNIQUE INDEX "index_payment_attempts_on_provider_charge_id" ON "payment_attempts" ("provider_charge_id");
-CREATE TRIGGER payment_attempts_no_update
-BEFORE UPDATE ON payment_attempts
-BEGIN
-  SELECT RAISE(ABORT, 'payment_attempts is append-only');
-END;
-CREATE TRIGGER payment_attempts_no_delete
-BEFORE DELETE ON payment_attempts
-BEGIN
-  SELECT RAISE(ABORT, 'payment_attempts is append-only');
-END;
 CREATE TABLE IF NOT EXISTS "plan_changes" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "subscription_id" integer NOT NULL, "from_plan_id" integer NOT NULL, "to_plan_id" integer NOT NULL, "kind" varchar NOT NULL, "strategy" varchar NOT NULL, "status" varchar NOT NULL, "proration_date" datetime(6), "effective_at" datetime(6) NOT NULL, "credit_cents" integer DEFAULT 0 NOT NULL, "charge_cents" integer DEFAULT 0 NOT NULL, "net_cents" integer DEFAULT 0 NOT NULL, "invoice_id" integer, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL, CONSTRAINT "fk_rails_207719221a"
 FOREIGN KEY ("subscription_id")
   REFERENCES "subscriptions" ("id")
@@ -177,31 +127,11 @@ FOREIGN KEY ("dunning_case_id")
   REFERENCES "dunning_cases" ("id")
 , CONSTRAINT dunning_steps_step_known CHECK (step IN ('day_0_notice', 'day_3_retry', 'day_7_suspend', 'day_14_cancel')));
 CREATE UNIQUE INDEX "index_dunning_steps_on_dunning_case_id_and_step" ON "dunning_steps" ("dunning_case_id", "step");
-CREATE TRIGGER dunning_steps_no_update
-BEFORE UPDATE ON dunning_steps
-BEGIN
-  SELECT RAISE(ABORT, 'dunning_steps is append-only');
-END;
-CREATE TRIGGER dunning_steps_no_delete
-BEFORE DELETE ON dunning_steps
-BEGIN
-  SELECT RAISE(ABORT, 'dunning_steps is append-only');
-END;
 CREATE TABLE IF NOT EXISTS "customer_notifications" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "customer_id" integer NOT NULL, "kind" varchar NOT NULL, "subject" varchar NOT NULL, "body" text NOT NULL, "dunning_case_id" integer, "dunning_step_id" integer, "sent_at" datetime(6) NOT NULL, "created_at" datetime(6) NOT NULL, CONSTRAINT "fk_rails_56ae8f022e"
 FOREIGN KEY ("customer_id")
   REFERENCES "customers" ("id")
 );
 CREATE INDEX "index_customer_notifications_on_customer_id" ON "customer_notifications" ("customer_id");
-CREATE TRIGGER customer_notifications_no_update
-BEFORE UPDATE ON customer_notifications
-BEGIN
-  SELECT RAISE(ABORT, 'customer_notifications is append-only');
-END;
-CREATE TRIGGER customer_notifications_no_delete
-BEFORE DELETE ON customer_notifications
-BEGIN
-  SELECT RAISE(ABORT, 'customer_notifications is append-only');
-END;
 CREATE TABLE IF NOT EXISTS "reconciliation_runs" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "triggered_by" varchar NOT NULL, "scope_subscription_id" integer, "started_at" datetime(6) NOT NULL, "finished_at" datetime(6), "subscriptions_checked" integer DEFAULT 0 NOT NULL, "discrepancies_found" integer DEFAULT 0 NOT NULL, "discrepancies_opened" integer DEFAULT 0 NOT NULL, "discrepancies_cleared" integer DEFAULT 0 NOT NULL, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL, CONSTRAINT "fk_rails_c86963ea59"
 FOREIGN KEY ("scope_subscription_id")
   REFERENCES "subscriptions" ("id")
@@ -228,7 +158,86 @@ FOREIGN KEY ("customer_id")
 , CONSTRAINT scenario_runs_status_known CHECK (status IN ('running', 'passed', 'failed')));
 CREATE INDEX "index_scenario_runs_on_scenario_key" ON "scenario_runs" ("scenario_key");
 CREATE INDEX "index_mocked_webhook_events_on_scenario_run_id" ON "mocked_webhook_events" ("scenario_run_id");
+CREATE TRIGGER billing_events_no_update
+BEFORE UPDATE ON billing_events
+BEGIN
+  SELECT RAISE(ABORT, 'billing_events is append-only');
+END;
+CREATE TRIGGER billing_events_no_delete
+BEFORE DELETE ON billing_events
+BEGIN
+  SELECT RAISE(ABORT, 'billing_events is append-only');
+END;
+CREATE TRIGGER credit_ledger_entries_no_update
+BEFORE UPDATE ON credit_ledger_entries
+BEGIN
+  SELECT RAISE(ABORT, 'credit_ledger_entries is append-only');
+END;
+CREATE TRIGGER credit_ledger_entries_no_delete
+BEFORE DELETE ON credit_ledger_entries
+BEGIN
+  SELECT RAISE(ABORT, 'credit_ledger_entries is append-only');
+END;
+CREATE TRIGGER subscription_state_transitions_no_update
+BEFORE UPDATE ON subscription_state_transitions
+BEGIN
+  SELECT RAISE(ABORT, 'subscription_state_transitions is append-only');
+END;
+CREATE TRIGGER subscription_state_transitions_no_delete
+BEFORE DELETE ON subscription_state_transitions
+BEGIN
+  SELECT RAISE(ABORT, 'subscription_state_transitions is append-only');
+END;
+CREATE TRIGGER invoice_line_items_no_update
+BEFORE UPDATE ON invoice_line_items
+BEGIN
+  SELECT RAISE(ABORT, 'invoice_line_items is append-only');
+END;
+CREATE TRIGGER invoice_line_items_no_delete
+BEFORE DELETE ON invoice_line_items
+BEGIN
+  SELECT RAISE(ABORT, 'invoice_line_items is append-only');
+END;
+CREATE TRIGGER payment_attempts_no_update
+BEFORE UPDATE ON payment_attempts
+BEGIN
+  SELECT RAISE(ABORT, 'payment_attempts is append-only');
+END;
+CREATE TRIGGER payment_attempts_no_delete
+BEFORE DELETE ON payment_attempts
+BEGIN
+  SELECT RAISE(ABORT, 'payment_attempts is append-only');
+END;
+CREATE TRIGGER dunning_steps_no_update
+BEFORE UPDATE ON dunning_steps
+BEGIN
+  SELECT RAISE(ABORT, 'dunning_steps is append-only');
+END;
+CREATE TRIGGER dunning_steps_no_delete
+BEFORE DELETE ON dunning_steps
+BEGIN
+  SELECT RAISE(ABORT, 'dunning_steps is append-only');
+END;
+CREATE TRIGGER customer_notifications_no_update
+BEFORE UPDATE ON customer_notifications
+BEGIN
+  SELECT RAISE(ABORT, 'customer_notifications is append-only');
+END;
+CREATE TRIGGER customer_notifications_no_delete
+BEFORE DELETE ON customer_notifications
+BEGIN
+  SELECT RAISE(ABORT, 'customer_notifications is append-only');
+END;
+CREATE TABLE IF NOT EXISTS "users" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "email" varchar NOT NULL, "password_digest" varchar NOT NULL, "name" varchar NOT NULL, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL);
+CREATE UNIQUE INDEX "index_users_on_email" ON "users" ("email");
+CREATE TABLE IF NOT EXISTS "sessions" ("id" integer PRIMARY KEY AUTOINCREMENT NOT NULL, "user_id" integer NOT NULL, "ip_address" varchar, "user_agent" varchar, "last_seen_at" datetime(6) NOT NULL, "created_at" datetime(6) NOT NULL, "updated_at" datetime(6) NOT NULL, CONSTRAINT "fk_rails_758836b4f0"
+FOREIGN KEY ("user_id")
+  REFERENCES "users" ("id")
+);
+CREATE INDEX "index_sessions_on_user_id" ON "sessions" ("user_id");
 INSERT INTO "schema_migrations" (version) VALUES
+('20260925124317'),
+('20260925124315'),
 ('20260925112156'),
 ('20260925112154'),
 ('20260925103203'),

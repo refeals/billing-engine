@@ -23,6 +23,9 @@ module Api
     config.autoload_lib(ignore: %w[assets tasks rubocop database])
 
     config.api_only = true
+    # The demo login keeps its session id in a signed, HttpOnly cookie; API-only apps
+    # don't load the cookie middleware by default.
+    config.middleware.use ActionDispatch::Cookies
     config.time_zone = "UTC"
 
     # Append-only tables are protected by SQLite triggers, which schema.rb can't express.

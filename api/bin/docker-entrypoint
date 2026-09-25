@@ -9,6 +9,7 @@ fi
 # Creates and seeds the databases on an empty volume, migrates on later deploys.
 if [ "$1" == "./bin/rails" ] && [ "$2" == "server" ]; then
   ./bin/rails db:prepare
+  ./bin/rails demo:ensure_user
 fi
 
 exec "${@}"

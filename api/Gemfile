@@ -16,6 +16,9 @@ gem "bootsnap", require: false
 # The Vue app runs on a different origin during development
 gem "rack-cors"
 
+# has_secure_password for the demo login.
+gem "bcrypt", "~> 3.1"
+
 group :development, :test do
   gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"
   gem "bundler-audit", require: false

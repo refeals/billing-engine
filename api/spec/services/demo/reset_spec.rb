@@ -14,4 +14,18 @@ RSpec.describe Demo::Reset do
     expect { BillingEvent.where(id: event.id).update_all(event_type: "clock.day_advanced") }
       .to raise_error(ActiveRecord::StatementInvalid, /append-only/)
   end
+
+  it "keeps the demo user and open sessions when it reseeds, and wipes them on a bare wipe" do
+    allow(Demo::Seed).to receive(:call) # the seeding itself is covered by seed_spec
+    user = Demo::User.ensure!
+    user.sessions.create!(last_seen_at: Time.utc(2026, 10, 1))
+
+    described_class.call
+
+    expect([ User.count, Session.count ]).to eq([ 1, 1 ])
+
+    described_class.call(reseed: false)
+
+    expect([ User.count, Session.count ]).to eq([ 0, 0 ])
+  end
 end

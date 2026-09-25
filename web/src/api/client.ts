@@ -37,6 +37,15 @@ export class ApiError extends Error {
   }
 }
 
+// Called when a request comes back 401 (the session expired or was signed out elsewhere),
+// so any screen falls back to the login instead of showing a broken view. The session
+// endpoints themselves are excluded: a 401 there is an expected answer, not an event.
+let onUnauthenticated: (() => void) | null = null
+
+export function setUnauthenticatedHandler(handler: (() => void) | null) {
+  onUnauthenticated = handler
+}
+
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
   const hasBody = options.body !== undefined
   let response: Response
@@ -50,6 +59,8 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
         ...options.headers,
       },
       body: hasBody ? JSON.stringify(options.body) : undefined,
+      // The session lives in an HttpOnly cookie set by the API's own domain.
+      credentials: 'include',
     })
   } catch {
     throw new ApiError(0, 'network_error', 'Could not reach the API. Is the Rails server running?')
@@ -57,6 +68,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
 
   const payload = await parseJson(response)
   if (response.ok) return payload as T
+  if (response.status === 401 && path !== '/session') onUnauthenticated?.()
 
   if (isErrorBody(payload)) {
     const { code, message, details } = payload.error

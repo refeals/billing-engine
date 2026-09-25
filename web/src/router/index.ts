@@ -1,8 +1,16 @@
 import { createRouter, createWebHistory } from 'vue-router'
 
+import { useAuthStore } from '@/stores/auth'
+
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
+    {
+      path: '/login',
+      name: 'login',
+      component: () => import('@/features/auth/LoginView.vue'),
+      meta: { title: 'Sign in', public: true },
+    },
     {
       path: '/',
       name: 'dashboard',
@@ -96,10 +104,29 @@ const router = createRouter({
   ],
 })
 
+// Every screen except the login needs a session. The first navigation asks the API once
+// whether the cookie still holds one; after that the store knows.
+router.beforeEach(async (to) => {
+  const auth = useAuthStore()
+  try {
+    await auth.load()
+  } catch {
+    // API unreachable: the login screen is the one place that explains it on submit.
+  }
+
+  const signedIn = auth.status === 'signed_in'
+  if (!to.meta.public && !signedIn) {
+    return { name: 'login', query: to.fullPath === '/' ? {} : { redirect: to.fullPath } }
+  }
+  if (to.name === 'login' && signedIn) return { name: 'dashboard' }
+})
+
 export default router
 
 declare module 'vue-router' {
   interface RouteMeta {
     title?: string
+    // Reachable without signing in (only the login screen).
+    public?: boolean
   }
 }

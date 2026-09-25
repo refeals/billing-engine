@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { ApiError, apiRequest } from '../client'
+import { ApiError, apiRequest, setUnauthenticatedHandler } from '../client'
 
 function stubFetch(status: number, body: string) {
   const fetchMock = vi.fn().mockResolvedValue(new Response(body || null, { status }))
@@ -83,5 +83,39 @@ describe('apiRequest', () => {
 
     expect(error.status).toBe(0)
     expect(error.code).toBe('network_error')
+  })
+})
+
+describe('session cookie and expiry', () => {
+  afterEach(() => {
+    setUnauthenticatedHandler(null)
+  })
+
+  it('sends the session cookie with every request', async () => {
+    const fetchMock = stubFetch(200, '{}')
+
+    await apiRequest('/plans')
+
+    expect(fetchMock.mock.calls[0]![1].credentials).toBe('include')
+  })
+
+  it('reports a 401 so the app can go back to the login', async () => {
+    const handler = vi.fn()
+    setUnauthenticatedHandler(handler)
+    stubFetch(401, JSON.stringify({ error: { code: 'unauthenticated', message: 'Sign in' } }))
+
+    await captureError(apiRequest('/plans'))
+
+    expect(handler).toHaveBeenCalledOnce()
+  })
+
+  it("doesn't treat the session endpoint's own 401 as an expiry", async () => {
+    const handler = vi.fn()
+    setUnauthenticatedHandler(handler)
+    stubFetch(401, JSON.stringify({ error: { code: 'invalid_credentials', message: 'Wrong' } }))
+
+    await captureError(apiRequest('/session', { method: 'POST', body: {} }))
+
+    expect(handler).not.toHaveBeenCalled()
   })
 })

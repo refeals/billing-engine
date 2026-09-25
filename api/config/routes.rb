@@ -41,6 +41,7 @@ Rails.application.routes.draw do
 
       resources :dunning_cases, only: %i[index show]
 
+      resource :session, only: %i[show create destroy]
       get "dashboard/summary", to: "dashboards#summary"
       resources :reconciliation_runs, only: %i[index show create]
       resources :reconciliation_discrepancies, only: :index do
