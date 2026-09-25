@@ -1,7 +1,6 @@
 module Ticks
-  # Executes the daily steps for one simulated day. Later features append their step
-  # classes to STEPS; the order is explicit because steps depend on each other (e.g.
-  # renewals must run before dunning looks for failed invoices).
+  # Executes the daily steps for one simulated day. The order is explicit because steps
+  # depend on each other (e.g. renewals must run before dunning looks for failed invoices).
   class Run
     STEPS = [
       # Before trial conversion: a trial scheduled to cancel must end, not convert.

@@ -1,8 +1,8 @@
 class SimulationClock < ApplicationRecord
   self.table_name = "simulation_clock"
 
-  # Set only by BillingClock.reset!. Every other change must move time forward, because
-  # later features order events, invoices and dunning steps by this clock.
+  # Set only by BillingClock.reset! and travel_to! (seeds, demo reset). Every other change
+  # must move time forward, because events, invoices and dunning steps are ordered by it.
   attribute :rewind_allowed, :boolean, default: false
 
   validates :current_time, presence: true

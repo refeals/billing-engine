@@ -3,7 +3,7 @@ module Webhooks
     # customer.subscription.* events echo the provider's view of a subscription. The engine
     # is the authority on subscription state (it decides trials, pauses and cancellations),
     # so these events are recorded, not applied. A disagreement shows up in the audit log
-    # here and is resolved by reconciliation (plan 11).
+    # here and is resolved by reconciliation.
     class SubscriptionObserved < Base
       def call
         subscription = Subscription.find_by(provider_subscription_id: object["id"])

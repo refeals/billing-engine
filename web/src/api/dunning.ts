@@ -27,7 +27,14 @@ export interface DunningCase {
   subscription_id: number
   access_suspended: boolean
   customer: { id: number; name: string; email: string }
-  invoice: { id: number; number: string; amount_due_cents: number; status: string }
+  invoice: {
+    id: number
+    number: string
+    // What the invoice was for; amount_due_cents drops to 0 once a case recovers.
+    total_cents: number
+    amount_due_cents: number
+    status: string
+  }
 }
 
 export interface DunningCaseDetail extends DunningCase {

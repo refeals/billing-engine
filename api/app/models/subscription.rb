@@ -84,7 +84,7 @@ class Subscription < ApplicationRecord
 
   # Runs after our change committed, so failing here can't undo it; raising would only turn a
   # successful operation into a 500. The failure is recorded instead, and the provider stays
-  # behind until the next change or until reconciliation (plan 11) flags the difference.
+  # behind until the next change or until reconciliation flags the difference.
   def push_to_provider
     PaymentGateway.current.update_subscription(provider_subscription_id, snapshot: provider_snapshot)
   rescue StandardError => error

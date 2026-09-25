@@ -21,7 +21,6 @@ const activeClass = 'bg-canvas font-medium text-ink'
       <ul>
         <li v-for="item in group.items" :key="item.to">
           <RouterLink
-            v-if="item.enabled"
             :to="item.to"
             class="block rounded-md px-2 py-1.5 text-sm text-ink-muted hover:bg-canvas hover:text-ink"
             :active-class="item.to === '/' ? '' : activeClass"
@@ -29,16 +28,6 @@ const activeClass = 'bg-canvas font-medium text-ink'
           >
             {{ item.label }}
           </RouterLink>
-
-          <span
-            v-else
-            class="flex cursor-not-allowed items-center justify-between rounded-md px-2 py-1.5 text-sm text-ink-faint"
-            :title="`Ships in plan ${item.plan}`"
-            aria-disabled="true"
-          >
-            {{ item.label }}
-            <span class="text-[10px] tracking-wide uppercase">soon</span>
-          </span>
         </li>
       </ul>
     </div>

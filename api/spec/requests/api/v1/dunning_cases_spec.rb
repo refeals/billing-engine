@@ -12,7 +12,7 @@ RSpec.describe "Dunning cases", type: :request do
   it "lists open and closed cases" do
     get "/api/v1/dunning_cases", params: { status: "open" }
     expect(json["data"].sole).to include("status" => "open", "last_step" => "day_0_notice", "next_step" => "day_3_retry")
-    expect(json["data"].sole["invoice"]).to include("amount_due_cents" => 4900, "status" => "open")
+    expect(json["data"].sole["invoice"]).to include("total_cents" => 4900, "amount_due_cents" => 4900, "status" => "open")
 
     advance_days(14)
 

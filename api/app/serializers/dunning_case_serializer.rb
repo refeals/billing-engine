@@ -19,7 +19,8 @@ class DunningCaseSerializer
       subscription_id: dunning_case.subscription_id,
       access_suspended: dunning_case.subscription.access_suspended?,
       customer: dunning_case.subscription.customer.slice(:id, :name, :email),
-      invoice: { id: invoice.id, number: invoice.number, amount_due_cents: invoice.amount_due_cents, status: invoice.status }
+      invoice: { id: invoice.id, number: invoice.number, total_cents: invoice.total_cents,
+        amount_due_cents: invoice.amount_due_cents, status: invoice.status }
     }
     return summary unless @detail
 

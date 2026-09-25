@@ -79,7 +79,7 @@ const error = computed(() => openCases.error.value ?? closedCases.error.value)
               <p class="font-medium">{{ dunningCase.customer.name }}</p>
               <p class="text-xs text-ink-muted">
                 {{ dunningCase.invoice.number }} ·
-                {{ formatMoney(dunningCase.invoice.amount_due_cents) }}
+                {{ formatMoney(dunningCase.invoice.total_cents) }}
               </p>
               <p
                 v-if="dunningCase.next_step && dunningCase.next_step_at"

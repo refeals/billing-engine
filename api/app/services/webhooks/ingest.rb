@@ -1,6 +1,6 @@
 module Webhooks
-  # Entry point for every provider event (the HTTP endpoint and, in plan 06, the fake
-  # provider's dispatcher). It records the event in the inbox first and processes it second,
+  # Entry point for every provider event (the HTTP endpoint and the fake provider's
+  # dispatcher). It records the event in the inbox first and processes it second,
   # in two transactions: if the handler fails, the inbox row and its error must survive the
   # rollback of the handler's changes, or the failure would leave no trace.
   class Ingest < ApplicationService
